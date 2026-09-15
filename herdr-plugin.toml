@@ -17,3 +17,8 @@ command = ["./src/agent-tree", "apply"]
 id = "clear"
 title = "Clear Agent Tree decorations and view"
 command = ["./src/agent-tree", "clear"]
+
+[[actions]]
+id = "toggle"
+title = "Toggle between the Agent Tree projection and Herdr's native Agents panel"
+command = ["./src/agent-tree", "toggle"]

@@ -4,11 +4,11 @@
 //! exactly one subscriber per server socket. No supervisor, no reconnect loop, no polling.
 
 use crate::forest;
+use crate::pause;
 use crate::projection::{self, ViewState};
 use crate::transport::{self, Model};
 use crate::wire::{Client, Incoming, R};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,10 +52,7 @@ fn now_ms() -> u64 {
 }
 
 fn lock_path(dir: &Path, socket: &str) -> PathBuf {
-    let mut hasher = Sha256::new();
-    hasher.update(socket.as_bytes());
-    let digest = crate::transport::hex(&hasher.finalize());
-    dir.join(format!("subscriber-{}.lock", &digest[..16]))
+    dir.join(format!("subscriber-{}.lock", transport::server_tag(socket)))
 }
 
 struct LockInfo {
@@ -121,29 +118,46 @@ fn acquire_lock(dir: &Path, socket: &str) -> Option<LockGuard> {
     Some(LockGuard { path })
 }
 
-/// Startup/apply entrypoint: ensures exactly one subscriber per server socket.
+/// Startup entrypoint: ensures exactly one subscriber per server socket.
+///
+/// Paused means no subscriber is started at all, so nothing can publish and the native
+/// panel is left alone. The paused flag lives in the state dir and is not reset here, so a
+/// deliberate off state survives a server restart until `apply` or `toggle` clears it.
 pub fn start() -> R<()> {
     let dir = state_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
     let socket = socket_path()?;
+    ensure_subscriber(&dir, &socket, true)
+}
 
-    if live_holder(&dir, &socket).is_some() {
+fn ensure_subscriber(dir: &Path, socket: &str, wait_for_handoff: bool) -> R<()> {
+    if pause::is_paused(&pause::path(dir, socket)) {
+        eprintln!("agent-tree: paused; leaving Herdr's native Agents panel alone and not starting a subscriber");
+        return Ok(());
+    }
+
+    if live_holder(dir, socket).is_some() {
+        if !wait_for_handoff {
+            // An explicit action only needs a subscriber present, not a fresh one. Waiting
+            // for the live holder to exit would delay the visible change by seconds.
+            return Ok(());
+        }
         // A live handoff or a duplicate startup hook can race here. Wait briefly for the
         // previous holder to notice its dead socket, then give up rather than fight it.
         let deadline = Instant::now() + Duration::from_secs(3);
         while Instant::now() < deadline {
-            if live_holder(&dir, &socket).is_none() {
+            if live_holder(dir, socket).is_none() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        if let Some(pid) = live_holder(&dir, &socket) {
+        if let Some(pid) = live_holder(dir, socket) {
             eprintln!("agent-tree: subscriber {pid} already holds {socket}; not starting a second one");
             return Ok(());
         }
     }
 
-    spawn_subscriber(&dir)
+    spawn_subscriber(dir)
 }
 
 fn spawn_subscriber(dir: &Path) -> R<()> {
@@ -204,7 +218,8 @@ pub fn run_subscriber() -> R<()> {
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut last_digest = String::new();
-    pass(&socket, &mut model, &mut view, &mut last_digest)?;
+    let paused = pause::path(&dir, &socket);
+    pass(&socket, &paused, &mut model, &mut view, &mut last_digest)?;
     events.set_stream_timeout(Duration::from_millis(500))?;
 
     loop {
@@ -222,7 +237,7 @@ pub fn run_subscriber() -> R<()> {
                 if message.get("event").is_none() {
                     continue;
                 }
-                if let Err(e) = pass(&socket, &mut model, &mut view, &mut last_digest) {
+                if let Err(e) = pass(&socket, &paused, &mut model, &mut view, &mut last_digest) {
                     eprintln!("agent-tree: reconcile pass failed: {e}");
                 }
             }
@@ -247,12 +262,20 @@ fn cleanup(socket: &str, model: &mut Model) {
 }
 
 /// One authoritative reconcile pass: fetch, decide, publish only real differences.
+///
+/// While paused the pass does nothing at all: no fetch, no recompute, no write. If a pause
+/// lands after this pass has already published, the flag is re-checked and the projection is
+/// removed, so the flag always wins the race and the native panel is left in charge.
 fn pass(
     socket: &str,
+    paused: &Path,
     model: &mut Model,
     view: &mut ViewState,
     last_digest: &mut String,
 ) -> R<()> {
+    if pause::is_paused(paused) {
+        return Ok(());
+    }
     let rows = transport::fetch_rows(socket)?;
     model.install(rows);
 
@@ -280,6 +303,18 @@ fn pass(
         view.passive()
     );
     *last_digest = model.digest();
+    if pause::is_paused(paused) {
+        let cleared = projection::clear_own_tokens(socket, model);
+        match projection::clear_view(socket) {
+            Ok(result) => eprintln!(
+                "agent-tree: paused during a reconcile pass; cleared {cleared} panes; view -> {result}"
+            ),
+            Err(e) => eprintln!(
+                "agent-tree: paused during a reconcile pass; cleared {cleared} panes; view clear failed: {e}"
+            ),
+        }
+        *view = ViewState::default();
+    }
     Ok(())
 }
 
@@ -287,23 +322,55 @@ fn pass(
 ///
 /// Enable does not run startup hooks and disable clears the view without running plugin code,
 /// so an explicit apply is the documented way to restore the projection in a running server.
+/// Applying always means "show the tree": it clears the paused flag first so it can never be
+/// a silent no-op.
 pub fn apply() -> R<()> {
-    start()?;
+    let dir = state_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
     let socket = socket_path()?;
+    pause::set(&pause::path(&dir, &socket), false)?;
+    ensure_subscriber(&dir, &socket, false)?;
+    let paused = pause::path(&dir, &socket);
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut digest = String::new();
-    pass(&socket, &mut model, &mut view, &mut digest)
+    pass(&socket, &paused, &mut model, &mut view, &mut digest)
 }
 
 /// Explicit `clear` action: removes only the plugin's own tokens and its own view.
+///
+/// It does not touch the paused flag: a clear while paused stays clear instead of
+/// re-arming a subscriber that would immediately publish again.
 pub fn clear() -> R<()> {
     let socket = socket_path()?;
-    let rows = transport::fetch_rows(&socket)?;
+    clear_projection(&socket)
+}
+
+/// `toggle` action: flips the paused flag and makes the change visible immediately.
+///
+/// Pausing clears the projection (native panel takes over); resuming applies it. The flag
+/// lives in the plugin state dir and is not reset by `start`, so a deliberate off state
+/// survives a server restart until `apply` or another `toggle`.
+pub fn toggle() -> R<()> {
+    let dir = state_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
+    let socket = socket_path()?;
+    if pause::flip(&pause::path(&dir, &socket))? {
+        clear_projection(&socket)?;
+        eprintln!("agent-tree: paused; Herdr's native Agents panel is back until the next toggle");
+    } else {
+        apply()?;
+        eprintln!("agent-tree: resumed; the delegation tree projection is back");
+    }
+    Ok(())
+}
+
+fn clear_projection(socket: &str) -> R<()> {
+    let rows = transport::fetch_rows(socket)?;
     let mut model = Model::default();
     model.install(rows);
-    let cleared = projection::clear_own_tokens(&socket, &mut model);
-    let view = projection::clear_view(&socket)?;
+    let cleared = projection::clear_own_tokens(socket, &mut model);
+    let view = projection::clear_view(socket)?;
     eprintln!("agent-tree: cleared {cleared} panes; view -> {view}");
     Ok(())
 }

@@ -163,6 +163,15 @@ pub fn hex(bytes: &[u8]) -> String {
     out
 }
 
+/// Stable, short tag derived from a server socket path. Used to scope per-server files in
+/// the shared plugin state dir (the subscriber lock and the paused flag).
+pub fn server_tag(socket: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(socket.as_bytes());
+    let digest = hex(&hasher.finalize());
+    digest[..16].to_string()
+}
+
 /// Authoritative ordered rows for the current server state.
 pub fn fetch_rows(socket: &str) -> R<Vec<AgentRow>> {
     let result = crate::wire::request(socket, "agent.list", json!({}))?;
