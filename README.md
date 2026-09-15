@@ -10,7 +10,8 @@ never touches panes it cannot validate.
 
 Status: MVP. Rendering, ordering, identity validation and lifecycle were observed in an
 isolated Herdr 0.9.0 server (see "What is verified" below). It has not been installed or
-enabled on a live server.
+enabled on a live server. `plugins/agent-tree/demo.sh` runs it on a real fixture in a
+throwaway instance with one command (see "Demo").
 
 ## How it works
 
@@ -41,6 +42,64 @@ cargo build --locked --manifest-path plugins/agent-tree/Cargo.toml
 
 The manifest runs `./src/agent-tree`, a launcher that execs
 `plugins/agent-tree/target/debug/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
+
+## Demo (one command)
+
+```sh
+plugins/agent-tree/demo.sh            # attach an isolated TUI and look at the sidebar
+plugins/agent-tree/demo.sh --print    # print the rendered sidebar as text (needs tmux)
+plugins/agent-tree/demo.sh --keep     # leave the isolated instance running on exit
+```
+
+The demo builds the plugin, creates a fully isolated Herdr instance under a temp directory,
+and shows the plugin working on a real delegation family: a root, a Worker beneath it, a
+Worker-owned Subagent beneath that Worker, a second root with its Subagent, two undelegating
+Pi sessions and a non-Pi row. It never touches the active Herdr server, its socket or
+`~/.config/herdr`, and never registers the plugin in a user-global registry.
+
+What it does, in order:
+
+- Preflights `herdr`, `cargo`, `jq`, `sha256sum` and `setsid` (plus `tmux` for `--print`), and
+  announces the resource cost before doing any of it.
+- Starts an isolated Herdr with its own `HOME`, XDG dirs and explicit socket, and verifies
+  the resolved socket at runtime, aborting if it is not the isolated one.
+- Installs the Pi publisher into the isolated HOME and launches **7 credential-free, idle Pi
+  agents**. Provider credential variables are cleared explicitly, then two independent
+  signals fail the demo closed before any further agent starts: the launched process
+  environment contains no provider key, and Pi reports `No models available`. It never
+  prompts an agent and cannot spend credits. Expect about 25 s and 1 GB RAM.
+- Publishes the pi-agency-shaped relationship tokens (`role`, `agency_self`, `agency_parent`,
+  `task_id`, `handoff`, `question`) derived from those real session paths. It never writes
+  `agent_tree_row` or `agent_tree_rank`; the plugin computes those itself.
+- Applies the plugin, verifies the ranks, then forges a Subagent's `agency_self` and shows the
+  plugin recompute and drop it before restoring the true value and the rank.
+- Stops the isolated server and removes the temp directory on exit, including on failure or
+  interrupt. `--keep` leaves the instance running and prints the attach and stop commands.
+
+What the fixture proves and does not prove:
+
+- Genuine: every `agent_session` comes from a real Pi process (`source: herdr:pi`,
+  `kind: path`).
+- Genuine: the tree is produced by the plugin's own identity validation. The forged-hash step
+  shows it recomputes rather than trusting published labels.
+- Fixture: the relationship tokens are published by the demo, not by pi-agency, because the
+  throwaway HOME has no pi-agency and no Tandem. They use the same names and values pi-agency
+  publishes, derived from the real session paths.
+- Fixture: the non-Pi row is a reported agent row (`codex`), not a launched Codex process.
+
+### Why real agents
+
+External `pane.report_agent_session` / `pane.report_agent` cannot populate `agent_session`:
+tested from an external connection with plain and `herdr:` sources, with and without
+`agent_session_path`, before and after an agent row existed, and `agent_session` stays absent.
+The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` section 11.
+
+### Running from inside Herdr
+
+The default (attach) mode starts the isolated TUI in your current terminal. If you run the
+demo from inside an existing Herdr pane, the nested client can hit the layout quirk from M1
+section 3.5 and the sidebar may render at an odd size. `--print` runs the client through a
+real tmux PTY instead and is the reliable path from inside Herdr (or in CI and pipes).
 
 ## Install (link a local checkout)
 

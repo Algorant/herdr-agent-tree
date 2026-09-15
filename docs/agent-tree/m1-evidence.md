@@ -499,3 +499,35 @@ routing token, because `agent.list` tokens carry no source attribution.
 **Note for the orchestrator:** if M2 adopts the plugin-side rule "publish tokens only on
 panes whose identity validates", this Task may reduce to documentation of the latent
 fragility rather than a code change.
+
+---
+
+## 11. Addendum (Tandem task-4) — a genuine `agent_session` requires a real agent launch
+
+This corrects the working assumption that an isolated `HOME` prevents the Pi publisher from
+loading, and settles how the one-command demo obtains genuine `agent_session` values. All
+statements below are **live-observed** in an isolated Herdr 0.9.0 instance (own `HOME`, XDG
+dirs and socket; the active server was never contacted).
+
+- The M1 isolation recipe (section 1) sets an isolated `HOME`, which removes `~/.pi` and with
+  it the real pi-herdr extension. That does **not** make the publisher unusable:
+  `herdr integration install pi` installs the publisher into the isolated HOME
+  (`$HOME/.pi/agent/extensions/herdr-agent-state.ts`), and a Pi launched from that HOME loads
+  it and reports `agent_session`. Keeping full `HOME` isolation is therefore both workable and
+  stricter than isolating only the XDG dirs (a real `HOME` lets an isolated server see
+  `~/.herdr`).
+- `herdr agent start <name> --kind pi --pane <id>` in the isolated instance returned
+  `agent_session = {source: "herdr:pi", kind: "path", value: "/tmp/<isolated>/.pi/sessions/<id>.jsonl"}`
+  for a real Pi process. With `OPENAI_API_KEY` and `PI_MODEL` cleared, the same Pi still
+  reports a genuine `agent_session` and displays `No models available`, so it cannot reach a
+  paid model.
+- External reporting still cannot fabricate it: `pane.report_agent_session` and
+  `pane.report_agent` with plain and `herdr:pi` sources, with and without
+  `agent_session_path`, before and after an agent row existed, left `agent_session` absent
+  from `agent.list`. The orchestrator's finding stands; the resolution is to launch a real
+  agent, not to report a session.
+- Consequence for the task-4 demo: `agent_session` is genuine (real launched Pi), the
+  delegation relationship tokens are published by the demo from those real session paths, and
+  the plugin's recomputation runs unchanged. The demo also forges one `agency_self` and shows
+  the plugin drop the rank before restoring it, so the validation is demonstrably real rather
+  than a hand-written tree.
