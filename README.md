@@ -117,6 +117,48 @@ To apply the projection to a running server without restarting it:
 herdr plugin action invoke agent-tree.apply
 ```
 
+## Toggle the projection off and on
+
+The plugin sets its projection on top of Herdr's native Agents panel; it never replaces that
+logic. `toggle` flips a paused flag in the plugin state directory and makes the change
+visible immediately:
+
+```sh
+herdr plugin action invoke agent-tree.toggle
+```
+
+- Pausing clears `agent_tree_row`/`agent_tree_rank` and the plugin's `tree` view, so Herdr's
+  native panel returns: whatever `agent_panel_sort` and your `ui.sidebar.agents.rows` give
+  you with the plugin uninstalled.
+- Toggling again restores the tree projection.
+- While paused the subscriber publishes nothing and sets no view. It does not recompute
+  quietly and then skip the write.
+- `apply` always means "show the tree": it clears the paused flag first, so it can never be a
+  silent no-op. `clear` never touches the paused flag, so a clear while paused stays clear.
+- The flag is a socket-scoped file, `paused-<tag>.flag`, beside the subscriber lock in
+  `HERDR_PLUGIN_STATE_DIR`. It holds nothing but its own existence.
+
+Restart behaviour: the paused flag lives in the plugin state directory, the same place as the
+subscriber lock, and the startup hook does not reset it. A deliberate off state therefore
+survives a Herdr server restart: the startup hook starts no subscriber and the native panel
+stays in place until you `apply` or `toggle` again. (If you want the tree back on restart,
+run `apply` once, or delete `paused-*.flag` from the plugin state directory.)
+
+### Toggle with one keystroke
+
+`herdr plugin action invoke` works from a `[[keys.command]]` shell entry:
+
+```toml
+[[keys.command]]
+key = "prefix+alt+t"
+type = "shell"
+description = "toggle the Pi delegation tree / native Agents panel"
+command = "herdr plugin action invoke agent-tree.toggle"
+```
+
+Reload it with `herdr server reload-config`; no server restart is needed. The plugin never
+installs this binding for you.
+
 ## Agents row configuration (verified fragment)
 
 Herdr renders rows from `ui.sidebar.agents.rows`. This plugin's decoration only appears if
@@ -208,8 +250,9 @@ herdr plugin unlink agent-tree               # unregisters; leaves files alone
 ```
 
 `clear` removes exactly the two plugin tokens (source `agent-tree`) and only clears the view
-when this plugin owns it. Run it with the subscriber stopped if you want the clear to stick;
-a running subscriber will restore its projection on the next relevant event.
+when this plugin owns it. A running subscriber restores its projection on the next relevant
+event, so `clear` is a one-shot reset. To keep the native panel for more than a moment, use
+`herdr plugin action invoke agent-tree.toggle` (see "Toggle the projection off and on").
 
 ## Verified behavior (isolated Herdr 0.9.0)
 

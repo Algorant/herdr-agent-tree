@@ -58,6 +58,11 @@ uninstall)
   herdr plugin action invoke agent-tree.clear >/dev/null 2>&1 && step "cleared plugin tokens and view" || step "clear action unavailable (already gone?)"
   herdr plugin disable agent-tree >/dev/null 2>&1 && step "disabled" || true
   herdr plugin unlink agent-tree >/dev/null 2>&1 && step "unregistered" || step "was not registered"
+  # Leave no paused flag behind for a future reinstall to trip over.
+  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr/plugins/agent-tree"
+  if compgen -G "$STATE_DIR/paused-*.flag" >/dev/null 2>&1; then
+    rm -f "$STATE_DIR"/paused-*.flag && step "removed paused flag(s)"
+  fi
   RELOAD_AFTER=1
 
   if grep -qF "$MARK_BEGIN" "$CONFIG" 2>/dev/null; then
@@ -188,6 +193,7 @@ else:
 PY
 
   say "Done"
-  echo "  Back out at any time:  $0 --uninstall"
+  echo "  Toggle the tree off/on:  herdr plugin action invoke agent-tree.toggle"
+  echo "  Back out at any time:    $0 --uninstall"
   ;;
 esac
