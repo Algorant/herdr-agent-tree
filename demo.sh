@@ -176,8 +176,10 @@ sidebar_width = 32
 sidebar_min_width = 32
 sidebar_max_width = 32
 
+# One line per agent: status, tree decoration, then the agent name. A two-row
+# layout repeats each agent and makes the tree much harder to read.
 [ui.sidebar.agents]
-rows = [["state_icon", "machine", "workspace", "tab"], ["$agent_tree_row", "agent"]]
+rows = [["state_icon", "$agent_tree_row", "agent"]]
 CFG
 
 SERVER_PID=""
