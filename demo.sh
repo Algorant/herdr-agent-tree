@@ -176,10 +176,12 @@ sidebar_width = 32
 sidebar_min_width = 32
 sidebar_max_width = 32
 
-# One line per agent: status, tree decoration, then the agent name. A two-row
-# layout repeats each agent and makes the tree much harder to read.
+# One line per agent: status, tree decoration, then the agent's terminal title.
+# Pi titles every agent, and the title starts with the agent's own name, so the
+# row identifies the Worker/Subagent; a two-row layout makes the tree harder to
+# read.
 [ui.sidebar.agents]
-rows = [["state_icon", "$agent_tree_row", "agent"]]
+rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
 CFG
 
 SERVER_PID=""
@@ -237,7 +239,10 @@ self_hash() {
 }
 
 mkws() {
-    herdr workspace create --cwd "$TMP/work" --label "$1" --no-focus \
+    # Give every agent its own cwd so Pi titles itself `π - <name>`, as live sessions and
+    # worktrees do. A shared cwd would title every row `π - work` and hide the name.
+    mkdir -p "$TMP/work/$1"
+    herdr workspace create --cwd "$TMP/work/$1" --label "$1" --no-focus \
         --env "PATH=$PI_DIR:$PATH" | jq -r '.result.root_pane.pane_id'
 }
 

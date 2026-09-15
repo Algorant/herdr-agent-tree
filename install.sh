@@ -7,8 +7,8 @@
 #
 # Changes it makes, all reversible:
 #   1. builds plugins/agent-tree
-#   2. appends a [ui.sidebar.agents] block to ~/.config/herdr/config.toml
-#      (backed up first; skipped if you already have one)
+#   2. adds or updates the agent-tree [ui.sidebar.agents] rows block in
+#      ~/.config/herdr/config.toml (backed up first; a foreign block is left alone)
 #   3. registers the plugin in your user-global Herdr registry
 #   4. invokes agent-tree.apply so the projection appears without a restart
 set -euo pipefail
@@ -66,12 +66,12 @@ uninstall)
 import sys
 path, begin, end = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = open(path).read().splitlines(keepends=True)
-out, skip = [], False
-for ln in lines:
-    if ln.strip() == begin: skip = True; continue
-    if ln.strip() == end:   skip = False; continue
-    if not skip: out.append(ln)
-open(path, "w").write("".join(out).rstrip() + "\n")
+starts = [i for i, line in enumerate(lines) if line.strip() == begin]
+ends = [i for i, line in enumerate(lines) if line.strip() == end]
+if len(starts) != 1 or len(ends) != 1 or starts[0] >= ends[0]:
+    sys.exit("agent-tree: %s has a damaged managed block; config left unchanged" % path)
+first, last = starts[0], ends[0]
+open(path, "w").write("".join(lines[:first] + lines[last + 1:]).rstrip() + "\n")
 PY
     step "removed the sidebar block from $CONFIG"
   else
@@ -102,8 +102,30 @@ install)
   cargo build --locked --manifest-path "$PLUGIN/Cargo.toml" 2>&1 | sed 's/^/  /'
 
   say "Configuring the Agents sidebar"
-  if grep -q "ui.sidebar.agents" "$CONFIG" 2>/dev/null; then
-    step "you already have a [ui.sidebar.agents] block; leaving it alone"
+  # One line per agent: status, tree decoration, then the agent's terminal title.
+  # Pi titles every session itself and puts the agent's own name first, so the row
+  # says *which* Worker or Subagent it is without a new plugin token or a .pi change.
+  ROWS='[["state_icon", "$agent_tree_row", "terminal_title_stripped"]]'
+  if grep -qF "$MARK_BEGIN" "$CONFIG" 2>/dev/null; then
+    cp -p "$CONFIG" "$CONFIG.agent-tree-backup.$(date +%Y%m%d-%H%M%S)"
+    step "backed up $CONFIG"
+    python3 - "$CONFIG" "$MARK_BEGIN" "$MARK_END" "$ROWS" <<'PY'
+import sys
+path, begin, end, rows = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+lines = open(path).read().splitlines(keepends=True)
+starts = [i for i, line in enumerate(lines) if line.strip() == begin]
+ends = [i for i, line in enumerate(lines) if line.strip() == end]
+if len(starts) != 1 or len(ends) != 1 or starts[0] >= ends[0]:
+    sys.exit("agent-tree: %s has a damaged managed block (need exactly one begin and one end marker, in order); config left unchanged" % path)
+first, last = starts[0], ends[0]
+if any(line.strip() == "[ui.sidebar.agents]" for i, line in enumerate(lines) if not (first < i < last)):
+    sys.exit("agent-tree: %s already declares [ui.sidebar.agents] outside the managed block; config left unchanged" % path)
+body = ["[ui.sidebar.agents]\n", "rows = %s\n" % rows]
+open(path, "w").write("".join(lines[:first + 1] + body + lines[last:]))
+PY
+    step "updated the agent-tree sidebar rows block"
+  elif grep -q "ui.sidebar.agents" "$CONFIG" 2>/dev/null; then
+    step "you already have a [ui.sidebar.agents] block this plugin does not manage; leaving it alone"
     step "to show the tree, add \"\$agent_tree_row\" to one of its rows yourself"
   else
     cp -p "$CONFIG" "$CONFIG.agent-tree-backup.$(date +%Y%m%d-%H%M%S)"
@@ -112,7 +134,7 @@ install)
 
 $MARK_BEGIN
 [ui.sidebar.agents]
-rows = [["state_icon", "\$agent_tree_row", "workspace", "tab"]]
+rows = $ROWS
 $MARK_END
 EOF
     step "appended the sidebar rows block"

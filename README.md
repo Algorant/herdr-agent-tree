@@ -120,49 +120,84 @@ herdr plugin action invoke agent-tree.apply
 ## Agents row configuration (verified fragment)
 
 Herdr renders rows from `ui.sidebar.agents.rows`. This plugin's decoration only appears if
-the row template references `$agent_tree_row`. The fragment below is exactly what was
-rendered and verified in the isolated session (default cells keep the existing theme; no
-theme colours are redefined):
+the row template references `$agent_tree_row`. `install.sh` appends this exact fragment, and
+updates it on re-install if the managed block already exists (default cells keep the existing
+theme; no theme colours are redefined):
 
 ```toml
 [ui.sidebar.agents]
-rows = [["state_icon", "machine", "workspace", "tab"], ["$agent_tree_row", "agent"]]
+rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
 ```
 
-Rendered example (`tree` is the projection label shown in the sidebar header):
+Rendered example from `demo.sh --print` at its fixed 32-column sidebar (`tree` is the
+projection label shown in the sidebar header):
 
 ```
- agents              tree
- ○ m4
-   R1
- ○ m4
-   └─W task-3 ▸ · W1
- ○ m4
-   │  └─S ? · S1
- ○ m4
-   R2
- ○ m4
-   └─S · S2
- ○ m4
-   X1          <- non-Pi agent: never written to
- ○ m4
-   L1          <- Pi session with no relationship tokens: unlinked
- ○ m4
-   U1
+ agents                    tree
+
+ ○ π - root-alpha
+ ○ └─W task-dem… · π - worker-…
+ ○ │  └─S ? · π - sub-alpha
+ ○ π - root-beta
+ ○ └─S · π - sub-beta
+ ○ π - lone-1
+ ○ π - lone-2
+ ○
 ```
+
+The last row is the demo's synthetic non-Pi agent, which has no terminal title; the plugin
+never decorates non-Pi rows, and this configuration does not identify them.
 
 The rank token is deliberately **not** rendered; it exists only for ordering.
+
+### Which agent is which (task-5)
+
+A Subagent row previously read `└─S · herdr · main`: it repeated the parent's workspace and
+tab and never named the Subagent. The fix is **option 3, row configuration**: render
+`terminal_title_stripped` instead of `workspace`/`tab`. No plugin token, contract or `.pi`
+change was needed.
+
+Pi already publishes the name, so option 1 (Pi-side naming) is satisfied as-is:
+`herdr agent list` gives Workers and Subagents durable names (`worker-task-108-459649c8`,
+`decoration-tracer`), and Pi titles every session itself — `π - ffsync` for a top-level
+session, `π - decoration-tracer - worker-task-5-…` for a Subagent (name first, parent context
+after), and `π - worker-task-108-…` for a Worker (the worktree name). Because the name is
+already on the wire, no `.pi` Task was filed; the gap was rendering only.
+
+The rejected alternatives and why:
+
+- **Option 2, name inside `agent_tree_row`.** The decoration is one 20-character token that
+also carries depth glyphs, branch, role, the Worker `task_id` and the attention glyph. The M2
+drop order is exactly the data a name would evict, and the C4 grammar
+(`indent branch role [task] [attention]`) has no name slot; it would also need `AgentRow`
+and digest changes for no gain over a built-in cell.
+- **The `agent` cell as the sole identity cell.** Isolated renders show `agent` is a real
+name cell (`worker-alpha`, not `pi`), but an unnamed agent renders its kind, and a top-level
+Pi session has `name = null`. It would show `pi` for every root — the uninformative row this
+Task set out to remove.
+- **`agent` plus `terminal_title_stripped`.** The sidebar divides the row across its cells;
+at 32 columns the fourth cell squeezed the name to `worker…` and the decoration to
+`└─W tas…`, losing the `task_id` and degrading nesting legibility.
+
+Width is why the decoration comes first and the title last: the title is clipped, not the
+nesting. The 20-character cap limits the token value, not the row, so the short decoration
+leaves most of the sidebar to the name. A Worker's title is long enough to clip at real
+sidebar widths; the decoration's `task-N` still identifies it and the
+`π - worker-task-N-…` prefix reinforces it. A real non-Pi agent with no terminal title
+renders an empty identity cell under this configuration; non-Pi rows are unranked, never
+decorated, and out of scope for task-5.
 
 Optional styling with existing palette values (not verified in this session):
 
 ```toml
 # [ui.sidebar.agents]
-# rows = [["state_icon", "machine", "workspace", "tab"],
-#         [{ token = "agent_tree_row", fg = "#8ec07c", dim = true }, "agent"]]
+# rows = [["state_icon", { token = "agent_tree_row", fg = "#8ec07c", dim = true },
+#          "terminal_title_stripped"]]
 ```
 
 Rollback of the fragment: delete the `[ui.sidebar.agents]` block (or restore the rows value
-you had before). Herdr's defaults apply underneath; the plugin writes no configuration.
+you had before). Herdr's defaults apply underneath; the plugin runtime writes no
+configuration, and `install.sh` only manages the marked block above.
 
 ## Rollback
 
