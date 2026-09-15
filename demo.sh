@@ -123,8 +123,8 @@ say "It never touches your active Herdr server, its socket, or ~/.config/herdr."
 # 2. Build the plugin.
 # ---------------------------------------------------------------------------
 log "Building the plugin"
-cargo build --locked --manifest-path "$PLUGIN_DIR/Cargo.toml"
-[ -x "$PLUGIN_DIR/target/debug/agent-tree" ] || fail "build did not produce target/debug/agent-tree"
+cargo build --locked --release --manifest-path "$PLUGIN_DIR/Cargo.toml"
+[ -x "$PLUGIN_DIR/target/release/agent-tree" ] || fail "build did not produce target/release/agent-tree"
 
 # ---------------------------------------------------------------------------
 # 3. Isolation environment. Set before any command that talks to Herdr, and clear the

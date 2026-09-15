@@ -6,16 +6,24 @@
 #   plugins/agent-tree/install.sh --status     show what is currently in place
 #
 # Changes it makes, all reversible:
-#   1. builds plugins/agent-tree
-#   2. adds or updates the agent-tree [ui.sidebar.agents] rows block in
+#   1. builds plugins/agent-tree as an optimized release binary
+#   2. stages a self-contained plugin root in the user data directory
+#      (default ~/.local/share/herdr-agent-tree/stage) with the release binary at
+#      ./src/agent-tree, so the installed plugin depends on neither this checkout
+#      nor target/ surviving
+#   3. adds or updates the agent-tree [ui.sidebar.agents] rows block in
 #      ~/.config/herdr/config.toml (backed up first; a foreign block is left alone)
-#   3. registers the plugin in your user-global Herdr registry
-#   4. invokes agent-tree.apply so the projection appears without a restart
+#   4. registers the staged root in your user-global Herdr registry
+#   5. invokes agent-tree.apply so the projection appears without a restart
+#
+# A previous install that registered this source checkout (local:<repo>) is relinked
+# to the staged root; no server restart is needed for the move.
 set -euo pipefail
 
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 PLUGIN="$REPO/plugins/agent-tree"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr/config.toml"
+SOCKET="${HERDR_SOCKET_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr/herdr.sock}"
 MARK_BEGIN="# >>> agent-tree sidebar rows >>>"
 MARK_END="# <<< agent-tree sidebar rows <<<"
 
@@ -24,17 +32,112 @@ step() { printf '  -> %s\n' "$*"; }
 fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 MODE=install
-for a in "$@"; do
-  case "$a" in
+PREFIX=""
+HERDR_BIN=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --uninstall) MODE=uninstall ;;
     --status)    MODE=status ;;
-    -h|--help)   sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) fail "unknown option: $a" ;;
+    --prefix)    [ "$#" -ge 2 ] || fail "--prefix needs a directory"; PREFIX=$2; shift ;;
+    --herdr)     [ "$#" -ge 2 ] || fail "--herdr needs a path"; HERDR_BIN=$2; shift ;;
+    -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) fail "unknown option: $1" ;;
   esac
+  shift
 done
 
-command -v herdr >/dev/null || fail "herdr not found on PATH."
+if [ -z "$PREFIX" ]; then
+  if [ -n "${XDG_DATA_HOME:-}" ]; then
+    PREFIX="$XDG_DATA_HOME/herdr-agent-tree"
+  else
+    PREFIX="$HOME/.local/share/herdr-agent-tree"
+  fi
+fi
+case "$PREFIX" in
+  /*) ;;
+  *) fail "--prefix must be an absolute path" ;;
+esac
+STAGE="$PREFIX/stage"
+RELEASE_BINARY="$PLUGIN/target/release/agent-tree"
+
+if [ -z "$HERDR_BIN" ]; then
+  if [ -n "${HERDR_BIN_PATH:-}" ]; then
+    HERDR_BIN=$HERDR_BIN_PATH
+  else
+    HERDR_BIN=$(command -v herdr || true)
+  fi
+fi
+[ -n "$HERDR_BIN" ] && [ -x "$HERDR_BIN" ] || fail "herdr not found; put it on PATH or pass --herdr PATH."
+herdr() { "$HERDR_BIN" "$@"; }
 herdr status >/dev/null 2>&1 || fail "no running Herdr server found."
+
+registered_path() {
+  herdr plugin list 2>/dev/null | grep -F 'agent-tree (' \
+    | sed -n 's/.*\[local:\(.*\)\].*/\1/p' | head -1 || true
+}
+
+build_release() {
+  say "Building the release binary"
+  cargo build --locked --release --manifest-path "$PLUGIN/Cargo.toml" 2>&1 | sed 's/^/  /'
+  [ -x "$RELEASE_BINARY" ] || fail "release build did not produce $RELEASE_BINARY"
+}
+
+stage_root() {
+  say "Staging a self-contained plugin root"
+  [ ! -L "$STAGE" ] || fail "refusing to replace a symlinked stage path: $STAGE"
+  mkdir -p "$PREFIX"
+  local work old id
+  work=$(mktemp -d "$PREFIX/.stage.XXXXXX") || fail "cannot create a staging directory under $PREFIX"
+  mkdir -p "$work/src"
+  cp -- "$PLUGIN/herdr-plugin.toml" "$work/herdr-plugin.toml"
+  cp -- "$PLUGIN/README.md" "$work/README.md"
+  cp -- "$RELEASE_BINARY" "$work/src/agent-tree"
+  chmod 644 "$work/herdr-plugin.toml" "$work/README.md"
+  chmod 755 "$work/src/agent-tree"
+
+  # The staged root is a complete plugin root: manifest identity and every command the
+  # manifest runs must resolve inside it, with the real release binary in place of the
+  # source launcher.
+  id=$(awk -F '"' '$1 ~ /^[[:space:]]*id[[:space:]]*=[[:space:]]*$/ { print $2; exit }' "$work/herdr-plugin.toml")
+  [ "$id" = agent-tree ] || { rm -rf "$work"; fail "staged manifest has the wrong plugin id: ${id:-<none>}"; }
+  for action in start apply clear toggle; do
+    grep -Fqx "command = [\"./src/agent-tree\", \"$action\"]" "$work/herdr-plugin.toml" \
+      || { rm -rf "$work"; fail "staged manifest is missing the '$action' command"; }
+  done
+  [ -x "$work/src/agent-tree" ] || { rm -rf "$work"; fail "staged binary is not executable"; }
+
+  old="$PREFIX/.stage-old.$$"
+  rm -rf "$old"
+  if [ -e "$STAGE" ]; then
+    mv -T "$STAGE" "$old" || { rm -rf "$work"; fail "cannot move the previous stage aside"; }
+  fi
+  if ! mv -T "$work" "$STAGE"; then
+    if [ -e "$old" ]; then mv -T "$old" "$STAGE"; fi
+    rm -rf "$work"
+    fail "cannot commit the staged plugin root: $STAGE"
+  fi
+  rm -rf "$old"
+  step "staged $STAGE ($(stat -c '%s' "$STAGE/src/agent-tree") bytes)"
+}
+
+link_staged() {
+  say "Registering the staged plugin"
+  local current
+  current=$(registered_path)
+  if [ -n "$current" ]; then
+    if [ "$current" = "$STAGE" ]; then
+      step "refreshing the registration at $STAGE"
+    else
+      step "replacing the previous install at $current"
+    fi
+    herdr plugin unlink agent-tree >/dev/null 2>&1 \
+      || fail "could not unregister the existing agent-tree plugin at $current"
+  fi
+  herdr plugin link "$STAGE" --enabled >/dev/null 2>&1 \
+    || fail "herdr plugin link $STAGE --enabled failed"
+  step "linked $STAGE"
+}
 
 case "$MODE" in
 
@@ -42,8 +145,19 @@ status)
   say "agent-tree status"
   if herdr plugin list 2>/dev/null | grep -q agent-tree; then
     herdr plugin list 2>/dev/null | grep agent-tree | sed 's/^/  /'
+    current=$(registered_path)
+    if [ "$current" = "$STAGE" ]; then
+      step "running from the staged release root"
+    elif [ -n "$current" ]; then
+      step "running from $current (a source checkout: run install.sh to move to the stage)"
+    fi
   else
     step "plugin not registered"
+  fi
+  if [ -x "$STAGE/src/agent-tree" ]; then
+    step "staged root present: $STAGE"
+  else
+    step "no staged root at $STAGE"
   fi
   if grep -qF "$MARK_BEGIN" "$CONFIG" 2>/dev/null; then
     step "sidebar rows block present in $CONFIG"
@@ -84,14 +198,20 @@ PY
   fi
   if [ "${RELOAD_AFTER:-0}" = 1 ]; then
     herdr server reload-config >/dev/null 2>&1 && step "config reloaded; rows reverted" \
-      || step "run 'herdr server reload-config' to revert the rows"
+      || step "run '$HERDR_BIN server reload-config' to revert the rows"
+  fi
+  if [ -e "$STAGE" ]; then
+    step "staged files left in place; remove with: rm -rf $STAGE"
   fi
   say "Done."
   ;;
 
 install)
   say "Installing agent-tree into your live Herdr"
-  echo "  This will register the plugin globally and append a sidebar block to:"
+  echo "  This will build a release binary, stage a self-contained plugin root at:"
+  echo "    $STAGE"
+  echo "  and register that staged root (not this source checkout), then add or update"
+  echo "  the sidebar rows block in:"
   echo "    $CONFIG"
   echo "  Both are reversible with: $0 --uninstall"
   echo
@@ -103,8 +223,8 @@ install)
   read -rp "  Continue? [y/N] " reply
   [[ "$reply" == [yY] ]] || { echo "Aborted. Nothing changed."; exit 1; }
 
-  say "Building"
-  cargo build --locked --manifest-path "$PLUGIN/Cargo.toml" 2>&1 | sed 's/^/  /'
+  build_release
+  stage_root
 
   say "Configuring the Agents sidebar"
   # One line per agent: status, tree decoration, then the agent's terminal title.
@@ -145,26 +265,21 @@ EOF
     step "appended the sidebar rows block"
   fi
 
-  say "Registering and applying the plugin"
-  if herdr plugin list 2>/dev/null | grep -q agent-tree; then
-    step "already registered"
-  else
-    herdr plugin link "$PLUGIN" --enabled 2>&1 | grep -o '"plugin_id":"[^"]*"' | sed 's/^/  -> linked /' || step "linked"
-  fi
+  link_staged
   herdr plugin action invoke agent-tree.apply >/dev/null 2>&1 && step "projection applied" || fail "apply failed; run '$0 --uninstall' to back out"
 
   # The sidebar rows come from config.toml, so the running server has to re-read it.
   # This reloads configuration only; it does not restart the server or disturb panes.
   herdr server reload-config >/dev/null 2>&1 && step "config reloaded (no restart, panes untouched)" \
-    || step "could not reload config automatically; run: herdr server reload-config"
+    || step "could not reload config automatically; run: $HERDR_BIN server reload-config"
 
   say "What the plugin sees right now"
-  python3 - <<'PY'
-import json, os, socket
+  python3 - "$SOCKET" <<'PY'
+import json, os, socket, sys
 
 def call(obj):
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(10)
-    s.connect(os.path.expanduser("~/.config/herdr/herdr.sock"))
+    s.connect(os.path.expanduser(sys.argv[1]))
     f = s.makefile("rwb"); f.write((json.dumps(obj) + "\n").encode()); f.flush()
     r = json.loads(f.readline()); s.close(); return r
 
@@ -193,7 +308,8 @@ else:
 PY
 
   say "Done"
-  echo "  Toggle the tree off/on:  herdr plugin action invoke agent-tree.toggle"
+  echo "  Running from:            $STAGE"
+  echo "  Toggle the tree off/on:  $HERDR_BIN plugin action invoke agent-tree.toggle"
   echo "  Back out at any time:    $0 --uninstall"
   ;;
 esac

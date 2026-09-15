@@ -37,11 +37,13 @@ throwaway instance with one command (see "Demo").
 ## Build
 
 ```sh
-cargo build --locked --manifest-path plugins/agent-tree/Cargo.toml
+cargo build --locked --release --manifest-path plugins/agent-tree/Cargo.toml
 ```
 
-The manifest runs `./src/agent-tree`, a launcher that execs
-`plugins/agent-tree/target/debug/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
+The manifest runs `./src/agent-tree`, a launcher that execs the optimized release binary
+`plugins/agent-tree/target/release/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
+Linking this source checkout directly is a development install; use `install.sh` below for a
+stable install.
 
 ## Demo (one command)
 
@@ -101,11 +103,50 @@ demo from inside an existing Herdr pane, the nested client can hit the layout qu
 section 3.5 and the sidebar may render at an odd size. `--print` runs the client through a
 real tmux PTY instead and is the reliable path from inside Herdr (or in CI and pipes).
 
-## Install (link a local checkout)
+## Install
+
+`install.sh` builds the optimized release binary, stages a self-contained plugin root in the
+user data directory, and registers **that staged root** (not this checkout) with Herdr:
 
 ```sh
+plugins/agent-tree/install.sh
+herdr plugin list          # expect: agent-tree (Agent Tree) enabled [local:$HOME/.local/share/herdr-agent-tree/stage]
+```
+
+The staged layout follows the root `herdr-notifs-plus` plugin's staging approach: a complete
+plugin root whose `src/<name>` is the real binary rather than a launcher.
+
+```
+~/.local/share/herdr-agent-tree/stage/   # or $XDG_DATA_HOME/herdr-agent-tree/stage
+├── herdr-plugin.toml
+├── README.md
+└── src/agent-tree                       # the release binary
+```
+
+Because the staged `src/agent-tree` is the release binary, the installed plugin depends on
+neither the repository checkout nor `target/`: `cargo clean`, a `target/` wipe, or moving or
+renaming the checkout does not affect it. Re-run `install.sh` to rebuild and restage.
+
+`install.sh` also adds or updates the sidebar rows block, invokes `agent-tree.apply`, and
+reloads the config. `--uninstall` reverses the registration and the config block, `--status`
+shows what is in place, and `--prefix DIR` / `--herdr PATH` support isolated installs.
+
+### Migrating an existing checkout install
+
+An install made earlier with `herdr plugin link <repo>/plugins/agent-tree --enabled` is
+registered against the source checkout and ran the debug binary through `./src/agent-tree`.
+Run the installer once and it relinks to the staged release root; no server restart is needed:
+
+```sh
+plugins/agent-tree/install.sh
+```
+
+Registering a source checkout by hand remains available for development, and now runs the
+release binary:
+
+```sh
+cargo build --locked --release --manifest-path plugins/agent-tree/Cargo.toml
 herdr plugin link /path/to/herdr/plugins/agent-tree --enabled
-herdr plugin list          # expect: agent-tree (Agent Tree) enabled
 ```
 
 `plugin link` registers the plugin. The startup hook runs on the next **server start**, not
