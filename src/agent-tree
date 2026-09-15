@@ -1,0 +1,11 @@
+#!/bin/sh
+# Source-checkout launcher. Mirrors the repository's existing src/<name> convention:
+# exec the locally built binary, with an env override for a staged/installed path.
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+BINARY=${AGENT_TREE_NATIVE_BIN:-"$ROOT/target/debug/agent-tree"}
+if [ ! -x "$BINARY" ]; then
+    printf '%s\n' 'agent-tree: native binary is unavailable; run cargo build --locked --manifest-path plugins/agent-tree/Cargo.toml' >&2
+    exit 1
+fi
+exec "$BINARY" "$@"

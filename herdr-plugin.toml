@@ -1,0 +1,19 @@
+id = "agent-tree"
+name = "Agent Tree"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Shows Pi Subagents and Workers beneath their immediate delegating agent in the native Agents sidebar"
+platforms = ["linux"]
+
+[[startup]]
+command = ["./src/agent-tree", "start"]
+
+[[actions]]
+id = "apply"
+title = "Apply the Pi delegation tree projection"
+command = ["./src/agent-tree", "apply"]
+
+[[actions]]
+id = "clear"
+title = "Clear Agent Tree decorations and view"
+command = ["./src/agent-tree", "clear"]

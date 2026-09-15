@@ -1,0 +1,15 @@
+[package]
+name = "agent-tree"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+publish = false
+
+[[bin]]
+name = "agent-tree"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"
+sha2 = "0.10"
