@@ -2,18 +2,20 @@
 id: task-2
 type: task
 title: "Release packaging, CI and a first published release"
-state: todo
+state: "in-progress"
 effort: "medium"
 relatedFiles: ["herdr-plugin.toml", "Cargo.toml", "install.sh", "README.md"]
 tags: ["release-readiness", "packaging", "ci"]
 accord:
-  status: "ready"
+  status: "claimed"
   acceptance: ["herdr-plugin.toml and Cargo.toml versions agree, and a CHANGELOG entry exists for the release version.", "A release build produces packaged artifacts with checksums for the supported target(s).", "CI runs build, test, clippy and fmt checks on push.", "A normal user can install and update the plugin from a published release artifact, documented in README.md.", "The local staging directory is no longer the documented default install path for a normal user; any remaining staged install is clearly labelled as a development install.", "Deliberate deviations from the herdr-notifs-plus release machinery are stated rather than left implicit."]
+  claimedAt: "2026-09-16T02:34:29Z"
   validation: ["$ git diff --check", "$ cargo build --locked --release"]
   constraints: ["Follow the herdr-notifs-plus release machinery rather than inventing a new scheme.", "Do not publish a tagged release without Algorant's explicit approval.", "Do not make the repository public without Algorant's explicit approval.", "Do not change plugin behaviour; this is packaging, CI and install path only.", "Do not leave hidden local state as the supported install path."]
-  updatedAt: "2026-09-16T01:23:50Z"
+  updatedAt: "2026-09-16T02:34:29Z"
 createdAt: "2026-09-16T01:23:50Z"
-updatedAt: "2026-09-16T01:23:50Z"
+updatedAt: "2026-09-16T02:34:29Z"
+assignee: "worker-task-2-295abba6"
 ---
 
 ## Description
