@@ -1,6 +1,15 @@
 # M2 implementation contract — Pi-aware delegation tree in Herdr Agents sidebar
 
-Status: submitted for orchestrator and Algorant agreement. **No plugin code exists.**
+> **Historical record.** This contract was agreed while the plugin lived in the
+> repository now named `Algorant/herdr-notifs-plus`. Its paths
+> (`plugins/agent-tree/...`), crate layout, build commands, status lines and live-enable
+> prerequisites describe the state at the time of agreement, not this repository today. It
+> is retained as the historical record of what was agreed; only markings that identify it as
+> historical have been added. The plugin was later extracted to this repository root and
+> implemented: current paths and commands are in `README.md`.
+
+Status at the time of agreement: submitted for orchestrator and Algorant agreement, and no
+plugin code existed then.
 Basis: M1 evidence (`docs/agent-tree/m1-evidence.md`, commits fea6468 and ab20bea) plus the
 orchestrator rulings (option C; rank validated Pi nodes only; never write to non-Pi panes;
 `.pi` task-189 a prerequisite for live enable) and Algorant's scope clarification that for the
@@ -12,7 +21,8 @@ Every choice below cites an M1 observation or is listed as an unknown in C10.
 
 ## C1 Identity, tokens, sources
 
-- Plugin id `agent-tree`; crate `plugins/agent-tree/` with its own `Cargo.toml`,
+- Plugin id `agent-tree`; crate `plugins/agent-tree/` (the monorepo path at the time; the
+  crate now sits at this repository root) with its own `Cargo.toml`,
   `Cargo.lock`, `herdr-plugin.toml`, `src/`. `min_herdr_version = "0.9.0"`.
   `platforms = ["linux"]` (add `macos` only if the portable path is actually validated in M4).
 - Exactly two pane keys, ever: **`agent_tree_row`** (decoration) and **`agent_tree_rank`**
@@ -270,7 +280,7 @@ transport; no parent inference of any kind.
 
 ## C12 M3 deliverables and validations
 
-Proposed files (nothing exists yet):
+Proposed files at the time (none existed yet; monorepo layout):
 
 ```
 plugins/agent-tree/Cargo.toml
@@ -296,5 +306,6 @@ row-configuration fragment and the setup/rollback documentation, including the t
 limitations (depth collapse beyond level 3; mid-session socket loss with `apply` as the
 remedy) and the `.pi` task-189 dependency with its symptom and retry.
 
-M3 declared validations: `git diff --check` and
-`cargo build --locked --manifest-path plugins/agent-tree/Cargo.toml`.
+M3 declared validations at the time: `git diff --check` and
+`cargo build --locked --manifest-path plugins/agent-tree/Cargo.toml` (the monorepo manifest
+path; the manifest is now `Cargo.toml` at this repository root).

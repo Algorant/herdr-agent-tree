@@ -9,9 +9,10 @@ It is an external Herdr plugin. It never changes Pi, never writes Pi-owned metad
 never touches panes it cannot validate.
 
 Status: MVP. Rendering, ordering, identity validation and lifecycle were observed in an
-isolated Herdr 0.9.0 server (see "What is verified" below). It has not been installed or
-enabled on a live server. `./demo.sh` runs it on a real fixture in a
-throwaway instance with one command (see "Demo").
+isolated Herdr 0.9.0 server (see "Verified behavior" below). The plugin has also been
+installed and enabled on Algorant's live Herdr server since 2026-09-15, from the staged
+release root that `install.sh` produces; the toggle and the tree were verified there.
+`./demo.sh` runs it on a real fixture in a throwaway instance with one command (see "Demo").
 
 ## How it works
 
@@ -127,7 +128,7 @@ user data directory, and registers **that staged root** (not this checkout) with
 herdr plugin list          # expect: agent-tree (Agent Tree) enabled [local:$HOME/.local/share/herdr-agent-tree/stage]
 ```
 
-The staged layout follows the root `herdr-notifs-plus` plugin's staging approach: a complete
+The staged layout follows the `herdr-notifs-plus` plugin's staging approach: a complete
 plugin root whose `src/<name>` is the real binary rather than a launcher.
 
 ```
@@ -350,15 +351,18 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
    agents) appear after the ranked block, in native order, because a missing token sorts
    last. A Pi session therefore moves to the top while it delegates and drops back when its
    last delegation ends.
-5. **Dependency: `.pi` task-189 before live enable.** A Worker whose own durable tokens are
-   gone but whose Worker-owned Subagent still carries a validated edge is parent-valid, so it
-   receives a rank; Pi's recovery guard then refuses that Worker with
+5. **Worker recovery conflict after a tokenless restart (`.pi` task-189).** A Worker whose
+   own durable tokens are gone but whose Worker-owned Subagent still carries a validated edge
+   is parent-valid, so it receives a rank; Pi's recovery guard then refuses that Worker with
    `has incomplete or conflicting Herdr metadata rather than a tokenless restart identity;
    recovery made no changes.` Retry `worker_recover` once Pi republishes the Worker's durable
-   tokens, or stop/clear this plugin first. Transient, non-destructive, self-healing — but
-   task-189 should land before this plugin is enabled live.
+   tokens, or stop/clear this plugin first. Transient, non-destructive, self-healing. The
+   conflict was a stated prerequisite for the live enable; the plugin has since been enabled
+   live (2026-09-15), so it remains a caveat to watch rather than an open gate.
 
-## Unverified (needs a live TUI)
+## Unverified
 
-Mouse targets, indexed `focus_agent` bindings, the visual focus ring, `workspace_order` /
-`tab_order` as secondary sort fields, and styled token rendering in a real theme.
+The live install (2026-09-15) verified installation, enablement, the toggle and the rendered
+tree. Still unverified: mouse targets, indexed `focus_agent` bindings, the visual focus ring,
+`workspace_order` / `tab_order` as secondary sort fields, and styled token rendering in a
+real theme.

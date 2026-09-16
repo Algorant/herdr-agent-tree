@@ -1,5 +1,10 @@
 # M1 evidence record — isolated Herdr spike (Tandem task-3-1)
 
+> **Historical record.** This evidence was gathered while the plugin lived in the
+> repository now named `Algorant/herdr-notifs-plus`. File paths, commit references and
+> Tandem task numbers below refer to that workspace and time, not to this repository's layout
+> today. The record is otherwise unchanged; see `README.md` for current paths and commands.
+
 Evidence only. No plugin implementation exists in this repository as a result of M1.
 Every statement below is labeled **live-observed** (a real process/server produced it),
 **synthetic** (I published fixture values into an isolated server), **source-read**
