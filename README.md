@@ -248,6 +248,28 @@ never decorates non-Pi rows, and this configuration does not identify them.
 
 The rank token is deliberately **not** rendered; it exists only for ordering.
 
+### Measured at real sidebar widths (task-4)
+
+The same fixture was measured in the isolated instance at Herdr's `sidebar_min_width` (18),
+default `sidebar_width` (26), the demo's pinned 32, and `sidebar_max_width` (36). A root title
+fits at every width. A Worker clips in both cells: at 26 and 32 the clipped task id
+(`task-…`, `task-dem…`) still identifies the Worker, while at 18 only `└─W t…` remains and the
+title is `π - …`. Nesting glyphs stay readable from 26 up, and at 18 the depth-2 role letter
+clips while the branch glyphs remain:
+
+```
+ 18  ○ └─W t… · π - …
+ 26  ○ └─W task-… · π - work…
+ 32  ○ └─W task-dem… · π - worker-…
+ 36  ○ └─W task-demo ▸ · π - worker-al…
+```
+
+At 36 the full 15-character decoration, including the `▸` attention glyph, is visible and only
+the title clips. `rows_by_agent` cannot shorten a Worker specifically: it keys on canonical
+agent IDs, so every Pi root, Worker and Subagent matches `pi`, and a `worker` key is rejected
+by `herdr config check` (`unknown canonical agent id`). The measured alternatives and raw
+renders are in `docs/agent-tree/task-4-measurements.md`.
+
 ### Which agent is which (task-5)
 
 A Subagent row previously read `└─S · herdr · main`: it repeated the parent's workspace and
@@ -359,6 +381,25 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
    tokens, or stop/clear this plugin first. Transient, non-destructive, self-healing. The
    conflict was a stated prerequisite for the live enable; the plugin has since been enabled
    live (2026-09-15), so it remains a caveat to watch rather than an open gate.
+6. **Identity clips at real sidebar widths (task-4).** The single-row configuration is
+   retained after measuring it at 18, 26, 32 and 36 columns. A Worker carries a 15-character
+   decoration and a long title, so at 26 and 32 both cells clip (`└─W task-… · π - work…` and
+   `└─W task-dem… · π - worker-…`) and the clipped task id still identifies the Worker; at 18
+   only `└─W t… · π - …` remains, so identity is weak there though the nesting glyphs are
+   intact. Nesting glyphs stay readable from 26 up, and at 18 the depth-2 role letter clips
+   (`│  └─…`).
+   Measured alternatives were rejected: a second row doubles the vertical cost of every
+   agent, title-first only moves the clipping onto the decoration, adding the `agent` cell
+   clips the decoration to `└─W t…` and loses the task id, and `rows_by_agent` keys on
+   canonical agent IDs, so all Pi agents share `pi` and a `worker` key is rejected by
+   `herdr config check`. Raw renders: `docs/agent-tree/task-4-measurements.md`.
+7. **An agent with no terminal title renders an empty identity cell (task-4).** The identity
+   cell is `terminal_title_stripped`, so a non-Pi agent (the demo's synthetic `codex` row)
+   and any agent that never sets a title leave it blank; the plugin never decorates non-Pi
+   rows, so it cannot fill that cell. The measured fix — adding the `agent` cell — shows
+   `codex`, but it splits the row further, clipping the Worker decoration to `└─W t…` and the
+   Subagent decoration to `│  └─…` and evicting the task id. The empty cell is therefore
+   documented rather than fixed.
 
 ## Unverified
 
