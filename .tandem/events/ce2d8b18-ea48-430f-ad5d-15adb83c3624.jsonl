@@ -14,3 +14,13 @@
 {"ts":"2026-09-16T02:34:29Z","event":"accord.claimed","id":"task-2","summary":"Accord claim for task-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":14}
 {"ts":"2026-09-16T02:47:08Z","event":"accord.delivered","id":"task-2","summary":"Accord deliver for task-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":15}
 {"ts":"2026-09-16T02:47:08Z","event":"task.completed","id":"task-2","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":16}
+{"ts":"2026-09-16T12:38:35Z","event":"task.created","id":"task-5","summary":"Fix hosted CI failures in the release pipeline","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":17}
+{"ts":"2026-09-16T12:39:00Z","event":"task.created","id":"task-6","summary":"Add a safe latest-checkout dogfood reload workflow","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":18}
+{"ts":"2026-09-16T12:39:18Z","event":"task.created","id":"task-7","summary":"Dogfood the latest x86-64 build and capture native sidebar evidence","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":19}
+{"ts":"2026-09-16T12:39:34Z","event":"task.created","id":"task-8","summary":"Publish v0.1.0 as a public Herdr plugin","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":20}
+{"ts":"2026-09-16T13:16:31Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: relatedFiles, acceptance, constraints","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":21}
+{"ts":"2026-09-16T13:27:45Z","event":"task.created","id":"task-9","summary":"Simplify the repository around test, build and deploy","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":22}
+{"ts":"2026-09-16T13:27:53Z","event":"task.updated","id":"task-6","summary":"Updated task-6 metadata: blockers, relatedFiles, acceptance, validation, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":23}
+{"ts":"2026-09-16T13:28:01Z","event":"task.updated","id":"task-7","summary":"Updated task-7 metadata: blockers, relatedFiles, validation, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":24}
+{"ts":"2026-09-16T13:28:14Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: relatedFiles, acceptance, validation","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":25}
+{"ts":"2026-09-16T13:29:03Z","event":"accord.claimed","id":"task-5","summary":"Accord claim for task-5","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":26}
