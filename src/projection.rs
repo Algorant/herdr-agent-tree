@@ -18,6 +18,12 @@ pub const VIEW_LABEL: &str = "tree";
 /// Widest rank the fixed-width encoding supports.
 pub const MAX_RANKS: usize = 999_999;
 
+/// True while `count` rankable rows fit the fixed-width rank space. Above it the plugin
+/// publishes nothing: no wrap, no partial publication.
+pub const fn within_rank_ceiling(count: usize) -> bool {
+    count <= MAX_RANKS
+}
+
 pub fn sort_spec() -> Value {
     json!([
         {"field": {"token": RANK_TOKEN}, "order": "asc"},
@@ -223,4 +229,87 @@ pub fn ensure_view(socket: &str, state: &mut ViewState) -> R<()> {
 /// Source-checked view clear. Never unconditional; a foreign owner is left untouched.
 pub fn clear_view(socket: &str) -> R<Value> {
     request(socket, "agent.view.clear", json!({"source": VIEW_SOURCE}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decoration::MAX_WIDTH;
+
+    fn placement(pane_id: &str, depth: usize, rank: u32) -> Placement {
+        Placement {
+            pane_id: pane_id.to_string(),
+            depth,
+            is_last_sibling: true,
+            role: "worker".to_string(),
+            task_id: None,
+            attention: None,
+            rank,
+        }
+    }
+
+    #[test]
+    fn view_sort_spec_is_exact_and_puts_rank_before_native_order() {
+        assert_eq!(
+            sort_spec(),
+            json!([
+                {"field": {"token": RANK_TOKEN}, "order": "asc"},
+                {"field": "workspace_order", "order": "asc"},
+                {"field": "tab_order", "order": "asc"},
+                {"field": "pane_order", "order": "asc"}
+            ])
+        );
+    }
+
+    #[test]
+    fn ranks_are_six_digit_and_lexicographic_order_matches_numeric_order() {
+        assert_eq!(MAX_RANKS, 999_999);
+        let mut previous: Option<String> = None;
+        for rank in 1..=1_000u32 {
+            let mut map = desired(&[placement("p", 0, rank)]);
+            let want = map.remove("p").unwrap().rank.unwrap();
+            assert_eq!(want, format!("{rank:06}"));
+            assert_eq!(want.len(), 6);
+            if let Some(previous) = previous {
+                assert!(previous < want, "{previous} must sort before {want}");
+            }
+            previous = Some(want);
+        }
+        assert_eq!(format!("{:06}", MAX_RANKS), "999999");
+        assert_eq!(format!("{:06}", MAX_RANKS + 1).len(), 7);
+    }
+
+    #[test]
+    fn rank_ceiling_is_exact_at_the_documented_maximum() {
+        assert!(within_rank_ceiling(0));
+        assert!(within_rank_ceiling(MAX_RANKS));
+        assert!(!within_rank_ceiling(MAX_RANKS + 1));
+    }
+
+    #[test]
+    fn unlinked_rows_receive_no_rank_and_are_left_out_of_the_projection() {
+        let map = desired(&[placement("linked", 0, 1)]);
+        assert!(map.contains_key("linked"));
+        assert!(!map.contains_key("unlinked"));
+        assert_eq!(map.len(), 1, "unlinked rows keep native relative order");
+    }
+
+    #[test]
+    fn parentless_root_without_attention_ranks_but_publishes_no_row() {
+        let mut map = desired(&[placement("root", 0, 1)]);
+        let root = map.remove("root").unwrap();
+        assert_eq!(root.row, None);
+        assert_eq!(root.rank.as_deref(), Some("000001"));
+    }
+
+    #[test]
+    fn desired_applies_the_decoration_cap() {
+        let placement = Placement {
+            task_id: Some("task-123456789012345".to_string()),
+            ..placement("worker", 2, 4)
+        };
+        let mut map = desired(&[placement]);
+        let row = map.remove("worker").unwrap().row.unwrap();
+        assert!(row.chars().count() <= MAX_WIDTH, "{row:?}");
+    }
 }

@@ -39,3 +39,42 @@ pub fn flip(path: &Path) -> R<bool> {
     set(path, now)?;
     Ok(now)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::TempDir;
+
+    #[test]
+    fn path_is_socket_scoped_and_documented() {
+        let dir = TempDir::new("pause-path");
+        let a = path(dir.path(), "/tmp/a.sock");
+        assert_eq!(a, path(dir.path(), "/tmp/a.sock"));
+        assert_ne!(a, path(dir.path(), "/tmp/b.sock"), "servers never share a pause");
+        let name = a.file_name().unwrap().to_string_lossy();
+        assert!(name.starts_with("paused-") && name.ends_with(".flag"), "{name}");
+        assert_eq!(a.parent().unwrap(), dir.path());
+    }
+
+    #[test]
+    fn set_creates_and_removes_the_flag_and_flip_toggles() {
+        let dir = TempDir::new("pause-flag");
+        let flag = path(dir.path(), "/tmp/a.sock");
+        assert!(!is_paused(&flag));
+
+        set(&flag, true).unwrap();
+        assert!(is_paused(&flag));
+        set(&flag, true).unwrap();
+        assert!(is_paused(&flag), "setting an existing flag is idempotent");
+
+        set(&flag, false).unwrap();
+        assert!(!is_paused(&flag));
+        set(&flag, false).unwrap();
+        assert!(!is_paused(&flag), "clearing an absent flag is a no-op");
+
+        assert!(flip(&flag).unwrap());
+        assert!(is_paused(&flag));
+        assert!(!flip(&flag).unwrap());
+        assert!(!is_paused(&flag));
+    }
+}

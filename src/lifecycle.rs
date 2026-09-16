@@ -284,7 +284,7 @@ fn pass(
         return Ok(());
     }
     let placements = forest::build(&model.order, &model.rows);
-    if placements.len() > projection::MAX_RANKS {
+    if !projection::within_rank_ceiling(placements.len()) {
         eprintln!(
             "agent-tree: {} rankable rows exceeds the fixed-width rank space; publishing nothing",
             placements.len()
@@ -373,4 +373,35 @@ fn clear_projection(socket: &str) -> R<()> {
     let view = projection::clear_view(socket)?;
     eprintln!("agent-tree: cleared {cleared} panes; view -> {view}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::TempDir;
+
+    #[test]
+    fn paused_pass_publishes_nothing_and_sets_no_view() {
+        let dir = TempDir::new("paused-pass");
+        let paused = pause::path(dir.path(), "/tmp/agent-tree-pass.sock");
+        pause::set(&paused, true).unwrap();
+
+        let mut model = Model::default();
+        let mut view = ViewState::default();
+        let mut digest = String::new();
+        // The unreachable socket proves the paused pass returns before any transport call.
+        let outcome = pass(
+            "/nonexistent/agent-tree.sock",
+            &paused,
+            &mut model,
+            &mut view,
+            &mut digest,
+        );
+        assert!(outcome.is_ok(), "a paused pass must be a no-op: {outcome:?}");
+        assert!(model.order.is_empty());
+        assert!(model.rows.is_empty());
+        assert!(digest.is_empty());
+        assert!(!view.owned());
+        assert!(!view.passive());
+    }
 }

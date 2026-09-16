@@ -104,3 +104,137 @@ fn collapsed(depth: usize) -> String {
 fn truncate(value: &str, limit: usize) -> String {
     value.chars().take(limit).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rendered(
+        depth: usize,
+        is_last_sibling: bool,
+        role: &str,
+        task: Option<&str>,
+        attention: Option<char>,
+    ) -> String {
+        decoration(depth, is_last_sibling, role, task, attention)
+            .expect("non-root placements with a known role always render")
+    }
+
+    #[test]
+    fn root_carries_attention_only() {
+        assert_eq!(decoration(0, true, "worker", Some("task-1"), None), None);
+        assert_eq!(
+            decoration(0, false, "subagent", Some("task-1"), Some('?')),
+            Some("?".to_string())
+        );
+        assert_eq!(
+            decoration(0, true, "worker", None, Some('▸')),
+            Some("▸".to_string())
+        );
+    }
+
+    #[test]
+    fn depth_indent_branch_and_role_grammar() {
+        assert_eq!(rendered(1, true, "worker", None, None), "└─W");
+        assert_eq!(rendered(1, false, "worker", None, None), "├─W");
+        assert_eq!(rendered(2, true, "subagent", None, None), "│  └─S");
+        assert_eq!(rendered(3, false, "worker", None, None), "│  │  ├─W");
+        assert_eq!(rendered(4, true, "worker", None, None), "…  │  │  └─W");
+        assert_eq!(rendered(9, true, "worker", None, None), "…  │  │  └─W");
+    }
+
+    #[test]
+    fn unknown_roles_never_render() {
+        assert_eq!(decoration(1, true, "reviewer", None, None), None);
+        assert_eq!(decoration(2, false, "", None, None), None);
+    }
+
+    #[test]
+    fn worker_task_is_truncated_to_twelve_and_subagents_ignore_it() {
+        assert_eq!(
+            rendered(1, true, "worker", Some("task-1234567890"), None),
+            "└─W task-1234567"
+        );
+        assert_eq!(
+            rendered(1, true, "worker", Some("task-1234567890123"), None),
+            "└─W task-1234567"
+        );
+        assert_eq!(rendered(1, true, "subagent", Some("task-1234567890123"), None), "└─S");
+        assert_eq!(rendered(1, true, "worker", Some(""), None), "└─W");
+    }
+
+    #[test]
+    fn attention_is_appended_when_it_fits() {
+        assert_eq!(
+            rendered(1, true, "worker", Some("task-1"), Some('?')),
+            "└─W task-1 ?"
+        );
+        assert_eq!(rendered(1, false, "subagent", None, Some('!')), "├─S !");
+    }
+
+    #[test]
+    fn over_cap_drops_the_task_first_and_keeps_branch_and_role() {
+        // 9 (collapsed indent) + 3 (branch/role) + 1 + 12 (task) + 2 (hint) = 27.
+        let value = rendered(4, true, "worker", Some("task-1234567890123"), Some('?'));
+        assert_eq!(value, "…  │  │  └─W ?");
+        assert!(!value.contains("task"), "the task is the first thing dropped");
+
+        let value = rendered(7, false, "subagent", Some("task-1234567890"), None);
+        assert_eq!(value, "…  │  │  ├─S");
+    }
+
+    #[test]
+    fn every_rendered_value_respects_the_cap_and_never_leads_with_whitespace() {
+        let long = "x".repeat(64);
+        let tasks: [Option<&str>; 4] = [None, Some("t"), Some("task-1234567890123"), Some(long.as_str())];
+        for depth in 0..12 {
+            for is_last_sibling in [true, false] {
+                for role in ["worker", "subagent", "reviewer"] {
+                    for task in tasks {
+                        for attention in [None, Some('?')] {
+                            if let Some(value) =
+                                decoration(depth, is_last_sibling, role, task, attention)
+                            {
+                                assert!(
+                                    value.chars().count() <= MAX_WIDTH,
+                                    "over cap at depth {depth}: {value:?}"
+                                );
+                                assert!(
+                                    !value.starts_with(char::is_whitespace),
+                                    "leading whitespace at depth {depth}: {value:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decoration_never_emits_a_full_hash_or_untruncated_task() {
+        let hash = "a".repeat(64);
+        let value = rendered(1, true, "worker", Some(&hash), Some('?'));
+        assert_eq!(value, "└─W aaaaaaaaaaaa ?");
+        assert!(!value.contains(&hash));
+        assert!(value.chars().count() <= MAX_WIDTH);
+    }
+
+    #[test]
+    fn decoration_never_emits_a_path_routing_id_delivery_id_or_report_content() {
+        let adversarial = [
+            "/sessions/secret.jsonl",
+            "route-0123456789abcdef0123456789abcdef",
+            "delivery-0123456789abcdef0123456789abcdef",
+            "report: the child failed because of a secret",
+        ];
+        for value in adversarial {
+            let rendered = rendered(1, true, "worker", Some(value), Some('?'));
+            assert!(
+                !rendered.contains(value),
+                "full metadata value leaked: {rendered:?}"
+            );
+            assert!(rendered.chars().count() <= MAX_WIDTH, "{rendered:?}");
+        }
+    }
+}

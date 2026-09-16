@@ -163,3 +163,338 @@ fn emit(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{self, with_token};
+    use crate::transport::Model;
+
+    fn placements(rows: Vec<AgentRow>) -> Vec<Placement> {
+        let mut model = Model::default();
+        model.install(rows);
+        build(&model.order, &model.rows)
+    }
+
+    fn ids(placements: &[Placement]) -> Vec<&str> {
+        placements
+            .iter()
+            .map(|placement| placement.pane_id.as_str())
+            .collect()
+    }
+
+    fn linked_ids(placements: &[Placement]) -> Vec<String> {
+        placements
+            .iter()
+            .map(|placement| placement.pane_id.clone())
+            .collect()
+    }
+
+    fn is_linked(placements: &[Placement], pane_id: &str) -> bool {
+        placements.iter().any(|placement| placement.pane_id == pane_id)
+    }
+
+    fn path(name: &str) -> String {
+        format!("/sessions/{name}.jsonl")
+    }
+
+    #[test]
+    fn emission_is_preorder_family_contiguous_and_native_ordered() {
+        let rows = vec![
+            testutil::pi_row("root-a", &path("root-a")),
+            testutil::pi_row("root-b", &path("root-b")),
+            testutil::linked(
+                "sub-b",
+                &path("sub-b"),
+                "subagent",
+                &identity::self_hash(&path("root-b")),
+            ),
+            testutil::linked(
+                "worker-2",
+                &path("worker-2"),
+                "worker",
+                &identity::self_hash(&path("root-a")),
+            ),
+            testutil::linked(
+                "worker-1",
+                &path("worker-1"),
+                "worker",
+                &identity::self_hash(&path("root-a")),
+            ),
+            testutil::linked(
+                "sub-a",
+                &path("sub-a"),
+                "subagent",
+                &identity::self_hash(&path("worker-1")),
+            ),
+            testutil::pi_row("lone", &path("lone")),
+        ];
+        let placements = placements(rows);
+
+        assert_eq!(
+            ids(&placements),
+            ["root-a", "worker-2", "worker-1", "sub-a", "root-b", "sub-b"]
+        );
+        assert_eq!(
+            placements.iter().map(|p| p.depth).collect::<Vec<_>>(),
+            [0, 1, 1, 2, 0, 1]
+        );
+        assert_eq!(
+            placements.iter().map(|p| p.rank).collect::<Vec<_>>(),
+            [1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(
+            placements
+                .iter()
+                .map(|p| p.is_last_sibling)
+                .collect::<Vec<_>>(),
+            [true, false, true, true, true, true]
+        );
+        assert!(!is_linked(&placements, "lone"));
+    }
+
+    #[test]
+    fn sibling_order_follows_native_order_and_is_deterministic() {
+        let family = |first: &str, second: &str| {
+            vec![
+                testutil::pi_row("root", &path("root")),
+                testutil::linked(
+                    first,
+                    &path(first),
+                    "worker",
+                    &identity::self_hash(&path("root")),
+                ),
+                testutil::linked(
+                    second,
+                    &path(second),
+                    "worker",
+                    &identity::self_hash(&path("root")),
+                ),
+            ]
+        };
+        assert_eq!(
+            linked_ids(&placements(family("w1", "w2"))),
+            ["root", "w1", "w2"]
+        );
+        assert_eq!(
+            linked_ids(&placements(family("w2", "w1"))),
+            ["root", "w2", "w1"]
+        );
+        assert_eq!(
+            linked_ids(&placements(family("w1", "w2"))),
+            linked_ids(&placements(family("w1", "w2")))
+        );
+    }
+
+    #[test]
+    fn tokenless_parent_is_validated_through_a_validated_child() {
+        let rows = vec![
+            testutil::pi_row("root", &path("root")),
+            testutil::linked(
+                "child",
+                &path("child"),
+                "worker",
+                &identity::self_hash(&path("root")),
+            ),
+        ];
+        let placements = placements(rows);
+        assert_eq!(ids(&placements), ["root", "child"]);
+        assert_eq!(placements[0].depth, 0);
+        assert_eq!(placements[0].role, "", "the root carries no relationship tokens");
+        assert_eq!(placements[0].attention, None);
+        assert_eq!(placements[1].depth, 1);
+    }
+
+    #[test]
+    fn duplicate_agency_self_unlinks_every_carrier() {
+        let root = path("root");
+        let shared_child = path("child");
+        let control = placements(vec![
+            testutil::pi_row("root", &root),
+            testutil::linked("child", &shared_child, "worker", &identity::self_hash(&root)),
+        ]);
+        assert_eq!(control.len(), 2, "control: a unique child is linked");
+
+        let duplicates = placements(vec![
+            testutil::pi_row("root", &root),
+            testutil::linked("child-a", &shared_child, "worker", &identity::self_hash(&root)),
+            testutil::linked("child-b", &shared_child, "worker", &identity::self_hash(&root)),
+        ]);
+        assert!(
+            duplicates.is_empty(),
+            "duplicate agency_self must unlink every carrier, got {:?}",
+            ids(&duplicates)
+        );
+    }
+
+    #[test]
+    fn malformed_and_missing_identities_are_unlinked() {
+        let root = testutil::pi_row("root", &path("root"));
+        let base = testutil::linked(
+            "child",
+            &path("child"),
+            "worker",
+            &identity::self_hash(&path("root")),
+        );
+        let mutations: Vec<(&str, AgentRow)> = vec![
+            ("role reviewer", with_token(base.clone(), "role", "reviewer")),
+            ("role empty", with_token(base.clone(), "role", "")),
+            (
+                "agency_self uppercase",
+                with_token(
+                    base.clone(),
+                    "agency_self",
+                    &identity::self_hash(&path("child")).to_uppercase(),
+                ),
+            ),
+            (
+                "agency_self short",
+                with_token(
+                    base.clone(),
+                    "agency_self",
+                    &identity::self_hash(&path("child"))[..63],
+                ),
+            ),
+            (
+                "agency_parent non-hex",
+                with_token(
+                    base.clone(),
+                    "agency_parent",
+                    &identity::self_hash(&path("root")).replace('a', "z"),
+                ),
+            ),
+            (
+                "recomputed self mismatch",
+                with_token(
+                    base.clone(),
+                    "agency_self",
+                    &identity::self_hash(&path("elsewhere")),
+                ),
+            ),
+            (
+                "dangling parent",
+                with_token(
+                    base.clone(),
+                    "agency_parent",
+                    &identity::self_hash(&path("nobody")),
+                ),
+            ),
+        ];
+        for (label, child) in mutations {
+            let placements = placements(vec![root.clone(), child]);
+            assert!(!is_linked(&placements, "child"), "{label} must be unlinked");
+        }
+
+        for missing in ["role", "agency_self", "agency_parent"] {
+            let mut child = base.clone();
+            child.tokens.remove(missing);
+            let placements = placements(vec![root.clone(), child]);
+            assert!(
+                !is_linked(&placements, "child"),
+                "missing {missing} must be unlinked"
+            );
+        }
+    }
+
+    #[test]
+    fn self_link_produces_no_parent_edge() {
+        let self_linked = with_token(
+            testutil::linked("a", &path("a"), "worker", &identity::self_hash(&path("a"))),
+            "agency_parent",
+            &identity::self_hash(&path("a")),
+        );
+        assert!(
+            placements(vec![self_linked.clone()]).is_empty(),
+            "a self-linked node with no children is unlinked"
+        );
+        let with_child = placements(vec![
+            self_linked,
+            testutil::linked(
+                "c",
+                &path("c"),
+                "worker",
+                &identity::self_hash(&path("a")),
+            ),
+        ]);
+        assert_eq!(ids(&with_child), ["a", "c"]);
+        assert_eq!(with_child[0].depth, 0, "the self-link never becomes its own parent");
+    }
+
+    #[test]
+    fn ambiguous_parent_matches_are_unlinked() {
+        let placements = placements(vec![
+            testutil::pi_row("root-a", &path("root")),
+            testutil::pi_row("root-b", &path("root")),
+            testutil::linked(
+                "child",
+                &path("child"),
+                "worker",
+                &identity::self_hash(&path("root")),
+            ),
+        ]);
+        assert!(
+            !is_linked(&placements, "child"),
+            "two panes sharing the parent hash must resolve to no edge"
+        );
+    }
+
+    #[test]
+    fn cycles_never_rank_and_never_validate_a_parent() {
+        let placements = placements(vec![
+            testutil::linked(
+                "a",
+                &path("a"),
+                "worker",
+                &identity::self_hash(&path("b")),
+            ),
+            testutil::linked(
+                "b",
+                &path("b"),
+                "worker",
+                &identity::self_hash(&path("a")),
+            ),
+        ]);
+        assert!(
+            placements.is_empty(),
+            "cycle members must not be emitted, got {:?}",
+            ids(&placements)
+        );
+    }
+
+    #[test]
+    fn stale_identity_is_recomputed_from_each_snapshot() {
+        let before = placements(vec![
+            testutil::pi_row("root", &path("root")),
+            testutil::linked(
+                "child",
+                &path("child"),
+                "worker",
+                &identity::self_hash(&path("root")),
+            ),
+        ]);
+        assert_eq!(ids(&before), ["root", "child"]);
+
+        let after = placements(vec![
+            testutil::pi_row("root", &path("replaced-root")),
+            testutil::linked(
+                "child",
+                &path("child"),
+                "worker",
+                &identity::self_hash(&path("root")),
+            ),
+        ]);
+        assert!(
+            !is_linked(&after, "child"),
+            "a replaced parent must not leave a stale edge"
+        );
+    }
+
+    #[test]
+    fn non_pi_rows_are_never_placement_candidates() {
+        let placements = placements(vec![
+            testutil::other_row("codex"),
+            testutil::pi_row("plain", &path("plain")),
+        ]);
+        assert!(placements.is_empty());
+    }
+}

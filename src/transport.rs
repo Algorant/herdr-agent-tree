@@ -185,3 +185,105 @@ fn rows_from(container: &Value, key: &str, source: &str) -> R<Vec<AgentRow>> {
         .ok_or_else(|| format!("{source} returned no {key} array"))?;
     Ok(array.iter().filter_map(AgentRow::from_value).collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{self, with_token};
+
+    #[test]
+    fn hex_and_server_tag_are_stable_and_distinct() {
+        assert_eq!(hex(&[0x00, 0x0f, 0xff]), "000fff");
+        assert_eq!(server_tag("/tmp/x.sock"), server_tag("/tmp/x.sock"));
+        assert_ne!(server_tag("/tmp/x.sock"), server_tag("/tmp/y.sock"));
+        assert_eq!(server_tag("/tmp/x.sock").len(), 16);
+    }
+
+    #[test]
+    fn from_value_reads_identity_fields_and_string_tokens() {
+        let value = json!({
+            "pane_id": "p1",
+            "workspace_id": "w",
+            "tab_id": "t",
+            "agent": "pi",
+            "agent_status": "idle",
+            "agent_session": {"kind": "path", "value": "/s/p1.jsonl"},
+            "tokens": {"role": "worker", "agency_self": "abc", "count": 7}
+        });
+        let row = AgentRow::from_value(&value).unwrap();
+        assert_eq!(row.pane_id, "p1");
+        assert_eq!(row.workspace_id, "w");
+        assert_eq!(row.tab_id, "t");
+        assert_eq!(row.agent, "pi");
+        assert_eq!(row.agent_status, "idle");
+        assert_eq!(row.session_path.as_deref(), Some("/s/p1.jsonl"));
+        assert_eq!(row.token("role").as_deref(), Some("worker"));
+        assert_eq!(row.token("agency_self").as_deref(), Some("abc"));
+        assert_eq!(row.token("count"), None, "non-string tokens are ignored");
+        assert!(row.is_pi_session());
+    }
+
+    #[test]
+    fn session_path_requires_path_kind_and_absolute_value() {
+        let cases = [
+            (json!({"kind": "path", "value": "/abs"}), Some("/abs")),
+            (json!({"kind": "path", "value": "rel"}), None),
+            (json!({"kind": "id", "value": "/abs"}), None),
+            (json!({"value": "/abs"}), None),
+            (json!({"kind": "path"}), None),
+        ];
+        for (session, expected) in cases {
+            let value = json!({"pane_id": "p", "agent_session": session});
+            assert_eq!(
+                AgentRow::from_value(&value).unwrap().session_path.as_deref(),
+                expected,
+                "{session}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_pi_rows_with_a_path_are_candidates() {
+        let codex = json!({"pane_id": "c", "agent": "codex"});
+        assert!(!AgentRow::from_value(&codex).unwrap().is_pi_session());
+        let pi_without_path = json!({"pane_id": "p", "agent": "pi"});
+        assert!(!AgentRow::from_value(&pi_without_path).unwrap().is_pi_session());
+    }
+
+    #[test]
+    fn rows_without_a_pane_id_are_skipped_and_a_missing_array_is_an_error() {
+        assert!(AgentRow::from_value(&json!({"agent": "pi"})).is_none());
+        assert!(rows_from(&json!({}), "agents", "agent.list").is_err());
+        let rows = rows_from(
+            &json!({"agents": [{"pane_id": "p"}, {"agent": "pi"}]}),
+            "agents",
+            "agent.list",
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn digest_is_stable_and_reacts_to_order_and_token_values() {
+        fn rows() -> Vec<AgentRow> {
+            vec![
+                testutil::pi_row("a", "/s/a"),
+                with_token(testutil::pi_row("b", "/s/b"), "role", "worker"),
+            ]
+        }
+        fn digest(rows: Vec<AgentRow>) -> String {
+            let mut model = Model::default();
+            model.install(rows);
+            model.digest()
+        }
+        assert_eq!(digest(rows()), digest(rows()));
+
+        let mut reversed = rows();
+        reversed.reverse();
+        assert_ne!(digest(rows()), digest(reversed), "native order is an input");
+
+        let mut changed = rows();
+        changed[0] = with_token(testutil::pi_row("a", "/s/a"), "agency_parent", "x");
+        assert_ne!(digest(rows()), digest(changed), "token values are an input");
+    }
+}

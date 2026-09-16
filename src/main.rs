@@ -17,6 +17,9 @@ mod projection;
 mod transport;
 mod wire;
 
+#[cfg(test)]
+mod testutil;
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

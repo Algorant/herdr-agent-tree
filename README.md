@@ -45,6 +45,20 @@ The manifest runs `./src/agent-tree`, a launcher that execs the optimized releas
 Linking this source checkout directly is a development install; use `install.sh` below for a
 stable install.
 
+## Test
+
+```sh
+cargo test --locked
+```
+
+The suite runs against the plugin's own logic with Rust's standard test harness and needs no
+running Herdr server, no socket and no network. It covers identity recomputation and
+self-validation, unique parent resolution and the tokenless-parent refinement, every
+contract C5 degenerate case, preorder emission with family contiguity and native ordering,
+the rank format and its ceiling, the decoration grammar and 20-character cap, the paused
+flag, and the CLI boundary where `apply` clears the paused flag while `clear` leaves it.
+`demo.sh` remains the end-to-end path for live Herdr behaviour.
+
 ## Demo (one command)
 
 ```sh
