@@ -2,13 +2,12 @@
 id: task-4
 type: task
 title: "Show which agent a row belongs to without clipping"
-state: "in-progress"
 priority: "low"
 effort: "small"
 relatedFiles: ["install.sh", "demo.sh", "README.md", "src/decoration.rs"]
 tags: ["ux", "papercut"]
 accord:
-  status: "delivered"
+  status: "accepted"
   acceptance: ["A Worker row identifies its agent legibly at the sidebar widths actually in use, or the current behaviour is retained with measured evidence that alternatives are worse.", "Nesting glyphs and parent-child structure remain readable at those widths.", "The decoration token stays within its documented cap and grammar.", "The empty identity cell for an agent with no terminal title is either fixed or explicitly documented.", "Whatever is chosen is measured at real sidebar widths, not reasoned about abstractly."]
   claimedAt: "2026-09-16T02:18:45Z"
   deliveredAt: "2026-09-16T02:33:58Z"
@@ -21,6 +20,9 @@ accord:
 createdAt: "2026-09-16T01:24:37Z"
 updatedAt: "2026-09-16T02:33:58Z"
 assignee: "worker-task-4-1a46539a"
+archivedAt: "2026-09-16T02:33:58Z"
+resolution:
+  outcome: "completed"
 ---
 
 ## Description
