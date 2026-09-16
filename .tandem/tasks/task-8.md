@@ -5,7 +5,7 @@ title: "Publish v0.1.0 as a public Herdr plugin"
 state: todo
 priority: "medium"
 effort: "medium"
-blockers: ["task-5", "task-7"]
+blockers: ["task-7", "task-11"]
 relatedFiles: ["herdr-plugin.toml", "Cargo.toml", "CHANGELOG.md", "release/targets.txt", "docs/release-evidence", ".github/workflows/release.yml", "scripts/release/install.sh", "README.md", "justfile", ".tandem", ".gitignore"]
 tags: ["release", "public", "marketplace"]
 accord:
@@ -15,7 +15,7 @@ accord:
   constraints: ["Do not begin until Algorant explicitly approves the dogfood result and public release.", "Keep .tandem available and tracked through the dogfood period; remove it from the public release tree only at the final release boundary after active coordination records are no longer needed.", "Promote only targets with matching version-bound native evidence and explicit owner approval; do not include aarch64 without native aarch64 evidence.", "Do not replace, move or recreate an existing tag or GitHub release; fail rather than overwrite.", "Use the tracked gated release workflow and exact source commit; do not upload hand-built substitute assets.", "Keep release checksums, archive allowlists and disabled-by-default installer behavior intact."]
   updatedAt: "2026-09-16T13:28:14Z"
 createdAt: "2026-09-16T12:39:34Z"
-updatedAt: "2026-09-16T13:28:14Z"
+updatedAt: "2026-09-16T17:58:18Z"
 ---
 
 ## Description
