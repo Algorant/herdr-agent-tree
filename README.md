@@ -10,7 +10,7 @@ never touches panes it cannot validate.
 
 Status: MVP. Rendering, ordering, identity validation and lifecycle were observed in an
 isolated Herdr 0.9.0 server (see "What is verified" below). It has not been installed or
-enabled on a live server. `plugins/agent-tree/demo.sh` runs it on a real fixture in a
+enabled on a live server. `./demo.sh` runs it on a real fixture in a
 throwaway instance with one command (see "Demo").
 
 ## How it works
@@ -37,20 +37,20 @@ throwaway instance with one command (see "Demo").
 ## Build
 
 ```sh
-cargo build --locked --release --manifest-path plugins/agent-tree/Cargo.toml
+cargo build --locked --release --manifest-path Cargo.toml
 ```
 
 The manifest runs `./src/agent-tree`, a launcher that execs the optimized release binary
-`plugins/agent-tree/target/release/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
+`target/release/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
 Linking this source checkout directly is a development install; use `install.sh` below for a
 stable install.
 
 ## Demo (one command)
 
 ```sh
-plugins/agent-tree/demo.sh            # attach an isolated TUI and look at the sidebar
-plugins/agent-tree/demo.sh --print    # print the rendered sidebar as text (needs tmux)
-plugins/agent-tree/demo.sh --keep     # leave the isolated instance running on exit
+./demo.sh            # attach an isolated TUI and look at the sidebar
+./demo.sh --print    # print the rendered sidebar as text (needs tmux)
+./demo.sh --keep     # leave the isolated instance running on exit
 ```
 
 The demo builds the plugin, creates a fully isolated Herdr instance under a temp directory,
@@ -109,7 +109,7 @@ real tmux PTY instead and is the reliable path from inside Herdr (or in CI and p
 user data directory, and registers **that staged root** (not this checkout) with Herdr:
 
 ```sh
-plugins/agent-tree/install.sh
+./install.sh
 herdr plugin list          # expect: agent-tree (Agent Tree) enabled [local:$HOME/.local/share/herdr-agent-tree/stage]
 ```
 
@@ -133,20 +133,20 @@ shows what is in place, and `--prefix DIR` / `--herdr PATH` support isolated ins
 
 ### Migrating an existing checkout install
 
-An install made earlier with `herdr plugin link <repo>/plugins/agent-tree --enabled` is
+An install made earlier with `herdr plugin link <repo>/. --enabled` is
 registered against the source checkout and ran the debug binary through `./src/agent-tree`.
 Run the installer once and it relinks to the staged release root; no server restart is needed:
 
 ```sh
-plugins/agent-tree/install.sh
+./install.sh
 ```
 
 Registering a source checkout by hand remains available for development, and now runs the
 release binary:
 
 ```sh
-cargo build --locked --release --manifest-path plugins/agent-tree/Cargo.toml
-herdr plugin link /path/to/herdr/plugins/agent-tree --enabled
+cargo build --locked --release --manifest-path Cargo.toml
+herdr plugin link /path/to/herdr-agent-tree --enabled
 ```
 
 `plugin link` registers the plugin. The startup hook runs on the next **server start**, not

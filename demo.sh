@@ -18,10 +18,10 @@
 # never registers the plugin in a user-global registry.
 #
 # Usage:
-#   plugins/agent-tree/demo.sh            # attach an isolated TUI to look at the sidebar
-#   plugins/agent-tree/demo.sh --print    # print the rendered sidebar as text (needs tmux)
-#   plugins/agent-tree/demo.sh --keep     # leave the isolated instance running on exit
-#   plugins/agent-tree/demo.sh --help
+#   ./demo.sh            # attach an isolated TUI to look at the sidebar
+#   ./demo.sh --print    # print the rendered sidebar as text (needs tmux)
+#   ./demo.sh --keep     # leave the isolated instance running on exit
+#   ./demo.sh --help
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -106,7 +106,7 @@ fi
 say "agent-tree demo"
 say ""
 say "This demo will:"
-say "  1. build plugins/agent-tree"
+say "  1. build ."
 say "  2. start an isolated Herdr server under a temporary directory (own HOME,"
 say "     XDG config/state/data/runtime, explicit socket)"
 say "  3. launch 7 credential-free, idle Pi agents it never prompts  (~25 s, ~1 GB RAM)"

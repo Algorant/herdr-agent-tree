@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # agent-tree live install / uninstall for your REAL Herdr server.
 #
-#   plugins/agent-tree/install.sh              install and apply
-#   plugins/agent-tree/install.sh --uninstall  remove and restore config
-#   plugins/agent-tree/install.sh --status     show what is currently in place
+#   ./install.sh              install and apply
+#   ./install.sh --uninstall  remove and restore config
+#   ./install.sh --status     show what is currently in place
 #
 # Changes it makes, all reversible:
-#   1. builds plugins/agent-tree as an optimized release binary
+#   1. builds . as an optimized release binary
 #   2. stages a self-contained plugin root in the user data directory
 #      (default ~/.local/share/herdr-agent-tree/stage) with the release binary at
 #      ./src/agent-tree, so the installed plugin depends on neither this checkout
@@ -20,8 +20,8 @@
 # to the staged root; no server restart is needed for the move.
 set -euo pipefail
 
-REPO=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-PLUGIN="$REPO/plugins/agent-tree"
+PLUGIN=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO="$PLUGIN"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr/config.toml"
 SOCKET="${HERDR_SOCKET_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr/herdr.sock}"
 MARK_BEGIN="# >>> agent-tree sidebar rows >>>"
@@ -173,7 +173,7 @@ uninstall)
   herdr plugin disable agent-tree >/dev/null 2>&1 && step "disabled" || true
   herdr plugin unlink agent-tree >/dev/null 2>&1 && step "unregistered" || step "was not registered"
   # Leave no paused flag behind for a future reinstall to trip over.
-  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr/plugins/agent-tree"
+  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr/."
   if compgen -G "$STATE_DIR/paused-*.flag" >/dev/null 2>&1; then
     rm -f "$STATE_DIR"/paused-*.flag && step "removed paused flag(s)"
   fi

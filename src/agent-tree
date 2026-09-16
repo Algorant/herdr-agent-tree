@@ -1,14 +1,14 @@
 #!/bin/sh
 # Source-checkout launcher. Mirrors the repository's existing src/<name> convention:
 # exec the locally built release binary, with an env override for a staged/installed path.
-# A linked source checkout is a development install. plugins/agent-tree/install.sh stages a
+# A linked source checkout is a development install. ./install.sh stages a
 # self-contained plugin root (real binary at ./src/agent-tree) under the user data directory,
 # so an installed plugin no longer depends on this checkout or on target/ surviving.
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BINARY=${AGENT_TREE_NATIVE_BIN:-"$ROOT/target/release/agent-tree"}
 if [ ! -x "$BINARY" ]; then
-    printf '%s\n' "agent-tree: native binary is unavailable: $BINARY; run cargo build --locked --release --manifest-path plugins/agent-tree/Cargo.toml" >&2
+    printf '%s\n' "agent-tree: native binary is unavailable: $BINARY; run cargo build --locked --release --manifest-path Cargo.toml" >&2
     exit 1
 fi
 exec "$BINARY" "$@"
