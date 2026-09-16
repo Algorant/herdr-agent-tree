@@ -2,19 +2,21 @@
 id: task-4
 type: task
 title: "Show which agent a row belongs to without clipping"
-state: todo
+state: "in-progress"
 priority: "low"
 effort: "small"
 relatedFiles: ["install.sh", "demo.sh", "README.md", "src/decoration.rs"]
 tags: ["ux", "papercut"]
 accord:
-  status: "ready"
+  status: "claimed"
   acceptance: ["A Worker row identifies its agent legibly at the sidebar widths actually in use, or the current behaviour is retained with measured evidence that alternatives are worse.", "Nesting glyphs and parent-child structure remain readable at those widths.", "The decoration token stays within its documented cap and grammar.", "The empty identity cell for an agent with no terminal title is either fixed or explicitly documented.", "Whatever is chosen is measured at real sidebar widths, not reasoned about abstractly."]
+  claimedAt: "2026-09-16T02:18:45Z"
   validation: ["$ git diff --check", "$ cargo build --locked --release"]
   constraints: ["Do not expand the decoration token beyond its documented cap or add a name slot that evicts the task id or attention indicator.", "Do not degrade nesting legibility to fit more identity text.", "Do not require a Pi-side change: Subagents and Workers already publish usable names."]
-  updatedAt: "2026-09-16T01:24:37Z"
+  updatedAt: "2026-09-16T02:18:45Z"
 createdAt: "2026-09-16T01:24:37Z"
-updatedAt: "2026-09-16T01:24:37Z"
+updatedAt: "2026-09-16T02:18:45Z"
+assignee: "worker-task-4-1a46539a"
 ---
 
 ## Description
