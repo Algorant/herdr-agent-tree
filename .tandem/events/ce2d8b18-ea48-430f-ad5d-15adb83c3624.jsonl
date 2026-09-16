@@ -2,3 +2,4 @@
 {"ts":"2026-09-16T01:23:50Z","event":"task.created","id":"task-2","summary":"Release packaging, CI and a first published release","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":2}
 {"ts":"2026-09-16T01:24:12Z","event":"task.created","id":"task-3","summary":"Correct stale documentation after the repository split","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":3}
 {"ts":"2026-09-16T01:24:37Z","event":"task.created","id":"task-4","summary":"Show which agent a row belongs to without clipping","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":4}
+{"ts":"2026-09-16T02:07:00Z","event":"accord.claimed","id":"task-1","summary":"Accord claim for task-1","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":5}
