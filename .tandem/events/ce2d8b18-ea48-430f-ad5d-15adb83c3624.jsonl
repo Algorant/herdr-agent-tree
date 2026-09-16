@@ -24,3 +24,4 @@
 {"ts":"2026-09-16T13:28:01Z","event":"task.updated","id":"task-7","summary":"Updated task-7 metadata: blockers, relatedFiles, validation, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":24}
 {"ts":"2026-09-16T13:28:14Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: relatedFiles, acceptance, validation","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":25}
 {"ts":"2026-09-16T13:29:03Z","event":"accord.claimed","id":"task-5","summary":"Accord claim for task-5","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":26}
+{"ts":"2026-09-16T13:31:14Z","event":"accord.delivered","id":"task-5","summary":"Accord deliver for task-5","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":27}
