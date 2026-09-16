@@ -2,19 +2,21 @@
 id: task-3
 type: task
 title: "Correct stale documentation after the repository split"
-state: todo
+state: "in-progress"
 priority: "low"
 effort: "small"
 relatedFiles: ["README.md", "docs/agent-tree/m1-evidence.md", "docs/agent-tree/m2-contract.md"]
 tags: ["documentation", "papercut"]
 accord:
-  status: "ready"
+  status: "claimed"
   acceptance: ["README.md no longer claims the plugin has never been installed on a live server, and describes its actual status accurately.", "Paths in current instructions resolve correctly in this repository.", "Historical evidence and contract documents remain historical, with any retained monorepo-era wording explicitly marked as describing the layout at that time.", "Any documentation directory restructuring preserves the meaning of historical references."]
+  claimedAt: "2026-09-16T02:15:07Z"
   validation: ["$ git diff --check"]
   constraints: ["Do not rewrite the evidence or contract records to match the present layout; mark them as historical instead.", "Do not change plugin behaviour or any script logic in this Task.", "Do not remove documented limitations or caveats while tidying."]
-  updatedAt: "2026-09-16T01:24:12Z"
+  updatedAt: "2026-09-16T02:15:07Z"
 createdAt: "2026-09-16T01:24:12Z"
-updatedAt: "2026-09-16T01:24:12Z"
+updatedAt: "2026-09-16T02:15:07Z"
+assignee: "worker-task-3-2fefc59d"
 ---
 
 ## Description
