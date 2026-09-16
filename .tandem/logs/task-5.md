@@ -2,13 +2,12 @@
 id: task-5
 type: task
 title: "Fix hosted CI failures in the release pipeline"
-state: "in-progress"
 priority: "high"
 effort: "small"
 relatedFiles: ["scripts/check-release.sh", "test/install-candidate.sh", ".github/workflows/ci.yml", "test/test-release.sh"]
 tags: ["ci", "release-readiness"]
 accord:
-  status: "delivered"
+  status: "accepted"
   acceptance: ["Normal branch and pull-request CI does not interpret GITHUB_REF as a release tag unless a release ref is explicitly supplied to the checker.", "Both musl candidate jobs install their packaged archive through the real installer using an absolute isolated prefix.", "A fresh hosted CI run for the fix commit completes successfully for the quality job and both candidate matrix jobs.", "Local release and installer suites still cover mismatched tags, relative/system-prefix rejection and fail-closed final publication."]
   claimedAt: "2026-09-16T13:29:03Z"
   deliveredAt: "2026-09-16T13:31:14Z"
@@ -17,10 +16,13 @@ accord:
   summary: "Fixed hosted CI by making release-ref validation explicit and canonicalizing the candidate helper's relative test prefix before calling the strict installer. Added regression coverage for ambient branch GITHUB_REF and relative candidate destinations. Local full checks and all three hosted CI jobs now pass."
   evidence: ["`GITHUB_REF=refs/heads/main make check` exited 0, including 41 Rust tests, 23 installer checks and 32 release checks.", "Regression coverage asserts ambient branch refs do not trigger release-tag validation and a relative candidate prefix installs beneath the caller cwd.", "Hosted CI run 35102300749 completed successfully: quality, x86_64-unknown-linux-musl candidate and aarch64-unknown-linux-musl candidate jobs all passed.", "Exact hosted run: https://github.com/Algorant/herdr-agent-tree/actions/runs/35102300749"]
   filesChanged: ["scripts/check-release.sh", "test/install-candidate.sh", "test/test-release.sh"]
-  updatedAt: "2026-09-16T13:31:14Z"
+  updatedAt: "2026-09-16T13:31:21Z"
 createdAt: "2026-09-16T12:38:35Z"
-updatedAt: "2026-09-16T13:31:14Z"
+updatedAt: "2026-09-16T13:31:21Z"
 assignee: "pi-orchestrator"
+archivedAt: "2026-09-16T13:31:21Z"
+resolution:
+  outcome: "completed"
 ---
 
 ## Description
