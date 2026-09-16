@@ -1,0 +1,4 @@
+{"ts":"2026-09-16T01:23:25Z","event":"task.created","id":"task-1","summary":"Add a real test suite for agent-tree","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":1}
+{"ts":"2026-09-16T01:23:50Z","event":"task.created","id":"task-2","summary":"Release packaging, CI and a first published release","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":2}
+{"ts":"2026-09-16T01:24:12Z","event":"task.created","id":"task-3","summary":"Correct stale documentation after the repository split","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":3}
+{"ts":"2026-09-16T01:24:37Z","event":"task.created","id":"task-4","summary":"Show which agent a row belongs to without clipping","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":4}
