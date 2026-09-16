@@ -6,7 +6,9 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 assets=
 targets_file=
 targets_root=$ROOT
-ref=${GITHUB_REF:-}
+# A release ref is checked only when the caller explicitly supplies --ref. Normal push and
+# pull-request jobs also export GITHUB_REF, but those branch refs are not release intent.
+ref=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --assets) [ "$#" -ge 2 ] || exit 2; assets=$2; shift 2 ;;

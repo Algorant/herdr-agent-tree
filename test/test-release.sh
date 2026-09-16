@@ -32,6 +32,8 @@ READELF=$SANDBOX/readelf FAKE_MACHINE=AArch64 "$TARGET_CHECK" --target aarch64-u
 expect_failure 'target checker rejects an aarch64 machine in x86_64 assets' env READELF="$SANDBOX/readelf" FAKE_MACHINE=AArch64 "$TARGET_CHECK" --target x86_64-unknown-linux-musl --binary-dir "$SANDBOX/bin"
 expect_failure 'target checker rejects dynamic NEEDED entries' env READELF="$SANDBOX/readelf" FAKE_MACHINE=AArch64 FAKE_NEEDED=1 "$TARGET_CHECK" --target aarch64-unknown-linux-musl --binary-dir "$SANDBOX/bin"
 pass 'target checker maps EM_X86_64 and EM_AARCH64 to exact release targets'
+GITHUB_REF=refs/heads/main "$CHECK"
+pass 'source release check ignores an ambient non-release branch ref'
 EPOCH=1700000000
 for output in one two; do
     for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
@@ -75,6 +77,14 @@ for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
     "$ROOT/test/install-candidate.sh" "$archive" "$target" "$SANDBOX/install-$target"
 done
 pass 'both packaged targets install with independent caller-pinned digests'
+relative_archive=$SANDBOX/one/agent-tree-v0.1.0-x86_64-unknown-linux-musl.tar.gz
+(
+    cd "$SANDBOX"
+    "$ROOT/test/install-candidate.sh" "$relative_archive" x86_64-unknown-linux-musl relative-install
+)
+[ -x "$SANDBOX/relative-install/0.1.0/x86_64-unknown-linux-musl/src/agent-tree" ] \
+    || fail 'relative candidate install prefix was not canonicalized under the caller cwd'
+pass 'candidate helper canonicalizes a relative isolated prefix'
 
 expect_failure 'final publication packaging fails closed without promoted targets' env SOURCE_DATE_EPOCH=$EPOCH GITHUB_EVENT_NAME=push GITHUB_REF=refs/tags/v0.1.0 "$PACKAGE" --mode final --target x86_64-unknown-linux-musl --binary-dir "$SANDBOX/bin" --output "$SANDBOX/final"
 mkdir -p "$SANDBOX/source/docs/release-evidence"

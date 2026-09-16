@@ -8,6 +8,10 @@ archive=$1
 target=$2
 prefix=$3
 [ -f "$archive" ] || { printf '%s: archive is missing: %s\n' "$PROGRAM" "$archive" >&2; exit 1; }
+case $prefix in
+    /*) ;;
+    *) prefix=$PWD/$prefix ;;
+esac
 case $archive in
     /*) ;;
     */*) archive=$(CDPATH= cd -- "${archive%/*}" && pwd -P)/${archive##*/} ;;
