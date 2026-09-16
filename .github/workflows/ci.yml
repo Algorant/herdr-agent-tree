@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.81.0 --profile minimal --component rustfmt,clippy
+      - name: Build locked source
+        run: cargo +1.81.0 build --locked
+      - name: Run format, Clippy, test, build, installer, and release-structure gates
+        run: make CARGO='cargo +1.81.0' ci
+      - name: Confirm final publication remains owner-gated
+        run: |
+          if make CARGO='cargo +1.81.0' release-check >release-check.out 2>release-check.err; then
+            echo 'release-check unexpectedly passed without an owner-promoted target' >&2
+            exit 1
+          fi
+          grep -F 'no targets are approved for final publication' release-check.err
+
+  candidates:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Rust target
+        run: rustup toolchain install 1.81.0 --profile minimal --target '${{ matrix.target }}'
+      - name: Build candidate twice with bundled musl and rust-lld
+        run: |
+          SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          export SOURCE_DATE_EPOCH
+          version=$(awk -F '"' '$1 ~ /^[[:space:]]*version[[:space:]]*=/ { print $2; exit }' herdr-plugin.toml)
+          CARGO_TARGET_DIR=target/build-one cargo +1.81.0 build --locked --release --target '${{ matrix.target }}' --bins
+          scripts/package-release.sh --target '${{ matrix.target }}' --binary-dir 'target/build-one/${{ matrix.target }}/release' --output target/assets-one
+          CARGO_TARGET_DIR=target/build-two cargo +1.81.0 build --locked --release --target '${{ matrix.target }}' --bins
+          scripts/package-release.sh --target '${{ matrix.target }}' --binary-dir 'target/build-two/${{ matrix.target }}/release' --output target/assets-two
+          archive="target/assets-one/agent-tree-v$version-${{ matrix.target }}.tar.gz"
+          cmp "$archive" "target/assets-two/agent-tree-v$version-${{ matrix.target }}.tar.gz"
+          test/install-candidate.sh "$archive" '${{ matrix.target }}' "target/install-${{ matrix.target }}"
+      - name: Assert candidate ELF machine and static linkage
+        run: scripts/check-target-binaries.sh --target '${{ matrix.target }}' --binary-dir 'target/build-two/${{ matrix.target }}/release'
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: candidate-${{ matrix.target }}
+          path: target/assets-one/*
+          if-no-files-found: error
+          retention-days: 7

@@ -35,25 +35,29 @@ pub fn decoration(
         _ => return None,
     };
 
-    let branch = if is_last_sibling { "\u{2514}\u{2500}" } else { "\u{251c}\u{2500}" }; // └─ / ├─
+    let branch = if is_last_sibling {
+        "\u{2514}\u{2500}"
+    } else {
+        "\u{251c}\u{2500}"
+    }; // └─ / ├─
     let task = task_id
         .filter(|_| role == "worker")
         .map(|value| truncate(value, MAX_TASK))
         .filter(|value| !value.is_empty());
     let hint = attention.map(|glyph| glyph.to_string());
 
-    let full = compose(&indent(depth), branch, role_label, task.as_deref(), hint.as_deref());
+    let full = compose(
+        &indent(depth),
+        branch,
+        role_label,
+        task.as_deref(),
+        hint.as_deref(),
+    );
     if full.chars().count() <= MAX_WIDTH {
         return Some(full);
     }
     // Drop order: task, then attention, then collapse the indent. Branch and role remain.
-    let without_task = compose(
-        &collapsed(depth),
-        branch,
-        role_label,
-        None,
-        hint.as_deref(),
-    );
+    let without_task = compose(&collapsed(depth), branch, role_label, None, hint.as_deref());
     if without_task.chars().count() <= MAX_WIDTH {
         return Some(without_task);
     }
@@ -159,7 +163,10 @@ mod tests {
             rendered(1, true, "worker", Some("task-1234567890123"), None),
             "└─W task-1234567"
         );
-        assert_eq!(rendered(1, true, "subagent", Some("task-1234567890123"), None), "└─S");
+        assert_eq!(
+            rendered(1, true, "subagent", Some("task-1234567890123"), None),
+            "└─S"
+        );
         assert_eq!(rendered(1, true, "worker", Some(""), None), "└─W");
     }
 
@@ -177,7 +184,10 @@ mod tests {
         // 9 (collapsed indent) + 3 (branch/role) + 1 + 12 (task) + 2 (hint) = 27.
         let value = rendered(4, true, "worker", Some("task-1234567890123"), Some('?'));
         assert_eq!(value, "…  │  │  └─W ?");
-        assert!(!value.contains("task"), "the task is the first thing dropped");
+        assert!(
+            !value.contains("task"),
+            "the task is the first thing dropped"
+        );
 
         let value = rendered(7, false, "subagent", Some("task-1234567890"), None);
         assert_eq!(value, "…  │  │  ├─S");
@@ -186,7 +196,12 @@ mod tests {
     #[test]
     fn every_rendered_value_respects_the_cap_and_never_leads_with_whitespace() {
         let long = "x".repeat(64);
-        let tasks: [Option<&str>; 4] = [None, Some("t"), Some("task-1234567890123"), Some(long.as_str())];
+        let tasks: [Option<&str>; 4] = [
+            None,
+            Some("t"),
+            Some("task-1234567890123"),
+            Some(long.as_str()),
+        ];
         for depth in 0..12 {
             for is_last_sibling in [true, false] {
                 for role in ["worker", "subagent", "reviewer"] {

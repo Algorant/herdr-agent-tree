@@ -43,8 +43,8 @@ cargo build --locked --release --manifest-path Cargo.toml
 
 The manifest runs `./src/agent-tree`, a launcher that execs the optimized release binary
 `target/release/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
-Linking this source checkout directly is a development install; use `install.sh` below for a
-stable install.
+Linking this source checkout directly, or running `./install.sh`, is a development install from
+a checkout. The supported path for a normal user is a release install (see "Install" below).
 
 ## Test
 
@@ -120,15 +120,96 @@ real tmux PTY instead and is the reliable path from inside Herdr (or in CI and p
 
 ## Install
 
-`install.sh` builds the optimized release binary, stages a self-contained plugin root in the
-user data directory, and registers **that staged root** (not this checkout) with Herdr:
+### Release install (the normal user path)
+
+The supported install path for a normal user is a published release artifact. **No tagged
+release has been published yet**, so there is nothing to download today; this documents the
+path a user takes once the owner approves publication. The release machinery and installer are
+ready and owner-gated (see `docs/release.md`).
+
+The release installer downloads one archive over HTTPS only, verifies a SHA-256 you pin,
+enforces a strict archive allowlist and commits an atomic versioned install. It registers the
+plugin **disabled** and never edits your Herdr configuration.
+
+A normal user does not have this checkout. Obtain the installer from the exact tagged
+repository revision and run it from a file:
 
 ```sh
-./install.sh
-herdr plugin list          # expect: agent-tree (Agent Tree) enabled [local:$HOME/.local/share/herdr-agent-tree/stage]
+version=0.1.0
+target=x86_64-unknown-linux-musl   # or aarch64-unknown-linux-musl
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  --output install-agent-tree.sh \
+  "https://raw.githubusercontent.com/Algorant/herdr-agent-tree/v$version/scripts/install.sh"
+less install-agent-tree.sh
 ```
 
-The staged layout follows the `herdr-notifs-plus` plugin's staging approach: a complete
+Do not pipe a download into a shell (`curl ... | sh`). Review the saved script, then run it with
+the pinned version, target and checksum:
+
+```sh
+checksum=<sha256 from the release's agent-tree-v$version-SHA256SUMS>
+chmod 755 install-agent-tree.sh
+./install-agent-tree.sh --version "$version" --checksum "$checksum" --target "$target"
+```
+
+Obtain the version and lowercase SHA-256 digest through a separately trusted channel. A checksum
+copied only from the same GitHub release detects corruption but does not authenticate the
+publisher.
+
+It installs to `${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/<version>/<target>`
+(`--prefix DIR` overrides it). This path is separate from the development stage below. The
+archive is `agent-tree-v<version>-<target>.tar.gz` under
+`https://github.com/Algorant/herdr-agent-tree/releases/download/v<version>/`. `--target` is
+optional on Linux and detects `x86_64` or `aarch64`; `--herdr PATH` / `HERDR_BIN_PATH` selects
+Herdr and `--no-link` skips registration.
+
+### Activate a release install (manual)
+
+The installer deliberately leaves activation to you; it never writes `config.toml` or enables
+the plugin. After it installs and links the plugin:
+
+1. Add the sidebar rows block from "Agents row configuration" below.
+2. Enable, reload and apply:
+
+```sh
+herdr plugin enable agent-tree
+herdr server reload-config
+herdr plugin action invoke agent-tree.apply
+```
+
+Without the rows block, the plugin's decoration has no cell to render into. `plugin link`
+registers the plugin; the startup hook runs on the next **server start**, not on link or
+enable, which is why the explicit `apply` is part of activation.
+
+### Update
+
+Download and review the new tag's installer (as above), then re-run it with the new version and
+checksum:
+
+```sh
+./install-agent-tree.sh --version 0.2.0 --checksum <sha256> --target x86_64-unknown-linux-musl
+```
+
+Versions install side by side under the same prefix, and the installer never overwrites an
+existing `<version>/<target>`. Point `herdr plugin link` at the new directory (the installer
+does this when Herdr is found) and remove the old one when you are satisfied. There is no
+`latest` and no current-version symlink: every install is an explicit version.
+
+### Development install from a checkout
+
+`./install.sh` at the repository root is a **development install** from this checkout. It
+builds the release binary, stages a self-contained plugin root at
+`${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/stage`, registers **that staged root**
+(not this checkout), adds or updates the sidebar rows block in `config.toml`, applies the
+projection and reloads the config:
+
+```sh
+./install.sh              # build, stage, register, configure and apply
+./install.sh --status     # show what is in place
+./install.sh --uninstall  # reverse registration and the config block
+```
+
+The staged layout follows the `herdr-notifs-plus` development staging approach: a complete
 plugin root whose `src/<name>` is the real binary rather than a launcher.
 
 ```
@@ -138,34 +219,19 @@ plugin root whose `src/<name>` is the real binary rather than a launcher.
 └── src/agent-tree                       # the release binary
 ```
 
-Because the staged `src/agent-tree` is the release binary, the installed plugin depends on
-neither the repository checkout nor `target/`: `cargo clean`, a `target/` wipe, or moving or
-renaming the checkout does not affect it. Re-run `install.sh` to rebuild and restage.
+Because the staged `src/agent-tree` is the release binary, the staged plugin depends on neither
+the repository checkout nor `target/`: `cargo clean`, a `target/` wipe, or moving the checkout
+does not affect it. Re-run `./install.sh` to rebuild and restage. The staging directory is
+local hidden state, so this is not the documented path for a normal user.
 
-`install.sh` also adds or updates the sidebar rows block, invokes `agent-tree.apply`, and
-reloads the config. `--uninstall` reverses the registration and the config block, `--status`
-shows what is in place, and `--prefix DIR` / `--herdr PATH` support isolated installs.
-
-### Migrating an existing checkout install
-
-An install made earlier with `herdr plugin link <repo>/. --enabled` is
-registered against the source checkout and ran the debug binary through `./src/agent-tree`.
-Run the installer once and it relinks to the staged release root; no server restart is needed:
-
-```sh
-./install.sh
-```
-
-Registering a source checkout by hand remains available for development, and now runs the
-release binary:
+An install made earlier with `herdr plugin link <repo>/. --enabled` registered the source
+checkout; running `./install.sh` relinks it to the staged root with no server restart.
+Registering the checkout by hand also remains available for development:
 
 ```sh
 cargo build --locked --release --manifest-path Cargo.toml
 herdr plugin link /path/to/herdr-agent-tree --enabled
 ```
-
-`plugin link` registers the plugin. The startup hook runs on the next **server start**, not
-on link or enable.
 
 To apply the projection to a running server without restarting it:
 

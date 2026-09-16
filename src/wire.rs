@@ -78,7 +78,10 @@ impl Client {
             .map_err(|e| format!("cannot send {method}: {e}"))?;
 
         let message = {
-            let _ = self.reader.get_ref().set_read_timeout(Some(REQUEST_TIMEOUT));
+            let _ = self
+                .reader
+                .get_ref()
+                .set_read_timeout(Some(REQUEST_TIMEOUT));
             let outcome = self.read();
             if let Some(timeout) = self.stream_timeout {
                 let _ = self.reader.get_ref().set_read_timeout(Some(timeout));
@@ -88,9 +91,7 @@ impl Client {
                 Incoming::Timeout => {
                     return Err(format!("{method}: timed out waiting for a response"))
                 }
-                Incoming::Closed => {
-                    return Err(format!("{method}: Herdr closed the connection"))
-                }
+                Incoming::Closed => return Err(format!("{method}: Herdr closed the connection")),
             }
         };
         if let Some(error) = message.get("error") {
@@ -113,7 +114,10 @@ impl Client {
             .iter()
             .map(|name| json!({ "type": name }))
             .collect();
-        let result = self.request("events.subscribe", json!({ "subscriptions": subscriptions }))?;
+        let result = self.request(
+            "events.subscribe",
+            json!({ "subscriptions": subscriptions }),
+        )?;
         match result.get("type").and_then(Value::as_str) {
             Some("subscription_started") => Ok(()),
             other => Err(format!(

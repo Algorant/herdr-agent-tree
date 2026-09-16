@@ -56,7 +56,6 @@ impl AgentRow {
             tokens: tokens(value),
         })
     }
-
 }
 
 fn text(value: &Value, key: &str) -> String {
@@ -73,9 +72,7 @@ fn tokens(value: &Value) -> HashMap<String, String> {
         .and_then(Value::as_object)
         .map(|map| {
             map.iter()
-                .filter_map(|(name, raw)| {
-                    raw.as_str().map(|text| (name.clone(), text.to_string()))
-                })
+                .filter_map(|(name, raw)| raw.as_str().map(|text| (name.clone(), text.to_string())))
                 .collect()
         })
         .unwrap_or_default()
@@ -110,7 +107,10 @@ impl Model {
     }
 
     pub fn ordered_rows(&self) -> Vec<&AgentRow> {
-        self.order.iter().filter_map(|id| self.rows.get(id)).collect()
+        self.order
+            .iter()
+            .filter_map(|id| self.rows.get(id))
+            .collect()
     }
 
     pub fn set_token(&mut self, pane_id: &str, name: &str, value: Option<String>) {
@@ -235,7 +235,10 @@ mod tests {
         for (session, expected) in cases {
             let value = json!({"pane_id": "p", "agent_session": session});
             assert_eq!(
-                AgentRow::from_value(&value).unwrap().session_path.as_deref(),
+                AgentRow::from_value(&value)
+                    .unwrap()
+                    .session_path
+                    .as_deref(),
                 expected,
                 "{session}"
             );
@@ -247,7 +250,9 @@ mod tests {
         let codex = json!({"pane_id": "c", "agent": "codex"});
         assert!(!AgentRow::from_value(&codex).unwrap().is_pi_session());
         let pi_without_path = json!({"pane_id": "p", "agent": "pi"});
-        assert!(!AgentRow::from_value(&pi_without_path).unwrap().is_pi_session());
+        assert!(!AgentRow::from_value(&pi_without_path)
+            .unwrap()
+            .is_pi_session());
     }
 
     #[test]

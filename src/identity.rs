@@ -156,7 +156,10 @@ mod tests {
         for role in ["worker", "subagent"] {
             let row = mutate(&self_row(), "role", role);
             let relation = relationship(&row).unwrap();
-            assert!(is_self_valid(&row, &relation), "{role} with a matching hash");
+            assert!(
+                is_self_valid(&row, &relation),
+                "{role} with a matching hash"
+            );
         }
 
         let cases: Vec<(&str, AgentRow)> = vec![
@@ -213,7 +216,11 @@ mod tests {
         assert_eq!(worker(Some("failed")), Some('!'));
         assert_eq!(worker(Some("reported")), Some('▸'));
         for absent in [Some("missing"), Some("unknown"), Some(""), None] {
-            assert_eq!(worker(absent), None, "handoff {absent:?} must not imply failure");
+            assert_eq!(
+                worker(absent),
+                None,
+                "handoff {absent:?} must not imply failure"
+            );
         }
 
         fn subagent(question: Option<&str>) -> Option<char> {

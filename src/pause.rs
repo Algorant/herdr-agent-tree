@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 /// Socket-scoped paused flag, named like the subscriber lock so distinct servers that share
 /// one plugin state dir never pause each other.
 pub fn path(state_dir: &Path, socket: &str) -> PathBuf {
-    state_dir.join(format!("paused-{}.flag", crate::transport::server_tag(socket)))
+    state_dir.join(format!(
+        "paused-{}.flag",
+        crate::transport::server_tag(socket)
+    ))
 }
 
 pub fn is_paused(path: &Path) -> bool {
@@ -50,9 +53,16 @@ mod tests {
         let dir = TempDir::new("pause-path");
         let a = path(dir.path(), "/tmp/a.sock");
         assert_eq!(a, path(dir.path(), "/tmp/a.sock"));
-        assert_ne!(a, path(dir.path(), "/tmp/b.sock"), "servers never share a pause");
+        assert_ne!(
+            a,
+            path(dir.path(), "/tmp/b.sock"),
+            "servers never share a pause"
+        );
         let name = a.file_name().unwrap().to_string_lossy();
-        assert!(name.starts_with("paused-") && name.ends_with(".flag"), "{name}");
+        assert!(
+            name.starts_with("paused-") && name.ends_with(".flag"),
+            "{name}"
+        );
         assert_eq!(a.parent().unwrap(), dir.path());
     }
 

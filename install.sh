@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# agent-tree live install / uninstall for your REAL Herdr server.
+# agent-tree DEVELOPMENT install / uninstall from this checkout, for your REAL Herdr server.
+#
+# This is a development install from a checkout, not the normal user install path. A normal
+# user installs a published release artifact with scripts/install.sh; see README.md.
 #
 #   ./install.sh              install and apply
 #   ./install.sh --uninstall  remove and restore config
@@ -207,7 +210,8 @@ PY
   ;;
 
 install)
-  say "Installing agent-tree into your live Herdr"
+  say "Installing agent-tree as a development install from this checkout"
+  echo "  This is not the normal user path; see scripts/install.sh and README.md for a release install."
   echo "  This will build a release binary, stage a self-contained plugin root at:"
   echo "    $STAGE"
   echo "  and register that staged root (not this source checkout), then add or update"
@@ -307,7 +311,7 @@ else:
     print("  parent drops back to the flat list when its last child exits.")
 PY
 
-  say "Done"
+  say "Done (development install)"
   echo "  Running from:            $STAGE"
   echo "  Toggle the tree off/on:  $HERDR_BIN plugin action invoke agent-tree.toggle"
   echo "  Back out at any time:    $0 --uninstall"

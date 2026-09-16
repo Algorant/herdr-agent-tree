@@ -71,7 +71,13 @@ pub fn reconcile_tokens(
     let snapshot: Vec<(String, Option<String>, Option<String>)> = model
         .ordered_rows()
         .into_iter()
-        .map(|row| (row.pane_id.clone(), row.token(ROW_TOKEN), row.token(RANK_TOKEN)))
+        .map(|row| {
+            (
+                row.pane_id.clone(),
+                row.token(ROW_TOKEN),
+                row.token(RANK_TOKEN),
+            )
+        })
         .collect();
     for (pane_id, current_row, current_rank) in snapshot {
         let want = desired.get(&pane_id).cloned().unwrap_or_default();
@@ -107,7 +113,13 @@ pub fn clear_own_tokens(socket: &str, model: &mut Model) -> usize {
     let snapshot: Vec<(String, Option<String>, Option<String>)> = model
         .ordered_rows()
         .into_iter()
-        .map(|row| (row.pane_id.clone(), row.token(ROW_TOKEN), row.token(RANK_TOKEN)))
+        .map(|row| {
+            (
+                row.pane_id.clone(),
+                row.token(ROW_TOKEN),
+                row.token(RANK_TOKEN),
+            )
+        })
         .collect();
     let mut cleared = 0usize;
     for (pane_id, current_row, current_rank) in snapshot {
@@ -210,7 +222,10 @@ pub fn ensure_view(socket: &str, state: &mut ViewState) -> R<()> {
         "agent.view.set",
         json!({"source": VIEW_SOURCE, "label": VIEW_LABEL, "sort": sort_spec()}),
     )?;
-    let active = result.get("active").and_then(Value::as_bool).unwrap_or(false);
+    let active = result
+        .get("active")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let owner = result
         .get("source")
         .and_then(Value::as_str)

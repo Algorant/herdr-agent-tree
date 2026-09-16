@@ -191,7 +191,9 @@ mod tests {
     }
 
     fn is_linked(placements: &[Placement], pane_id: &str) -> bool {
-        placements.iter().any(|placement| placement.pane_id == pane_id)
+        placements
+            .iter()
+            .any(|placement| placement.pane_id == pane_id)
     }
 
     fn path(name: &str) -> String {
@@ -300,7 +302,10 @@ mod tests {
         let placements = placements(rows);
         assert_eq!(ids(&placements), ["root", "child"]);
         assert_eq!(placements[0].depth, 0);
-        assert_eq!(placements[0].role, "", "the root carries no relationship tokens");
+        assert_eq!(
+            placements[0].role, "",
+            "the root carries no relationship tokens"
+        );
         assert_eq!(placements[0].attention, None);
         assert_eq!(placements[1].depth, 1);
     }
@@ -311,14 +316,29 @@ mod tests {
         let shared_child = path("child");
         let control = placements(vec![
             testutil::pi_row("root", &root),
-            testutil::linked("child", &shared_child, "worker", &identity::self_hash(&root)),
+            testutil::linked(
+                "child",
+                &shared_child,
+                "worker",
+                &identity::self_hash(&root),
+            ),
         ]);
         assert_eq!(control.len(), 2, "control: a unique child is linked");
 
         let duplicates = placements(vec![
             testutil::pi_row("root", &root),
-            testutil::linked("child-a", &shared_child, "worker", &identity::self_hash(&root)),
-            testutil::linked("child-b", &shared_child, "worker", &identity::self_hash(&root)),
+            testutil::linked(
+                "child-a",
+                &shared_child,
+                "worker",
+                &identity::self_hash(&root),
+            ),
+            testutil::linked(
+                "child-b",
+                &shared_child,
+                "worker",
+                &identity::self_hash(&root),
+            ),
         ]);
         assert!(
             duplicates.is_empty(),
@@ -337,7 +357,10 @@ mod tests {
             &identity::self_hash(&path("root")),
         );
         let mutations: Vec<(&str, AgentRow)> = vec![
-            ("role reviewer", with_token(base.clone(), "role", "reviewer")),
+            (
+                "role reviewer",
+                with_token(base.clone(), "role", "reviewer"),
+            ),
             ("role empty", with_token(base.clone(), "role", "")),
             (
                 "agency_self uppercase",
@@ -409,15 +432,13 @@ mod tests {
         );
         let with_child = placements(vec![
             self_linked,
-            testutil::linked(
-                "c",
-                &path("c"),
-                "worker",
-                &identity::self_hash(&path("a")),
-            ),
+            testutil::linked("c", &path("c"), "worker", &identity::self_hash(&path("a"))),
         ]);
         assert_eq!(ids(&with_child), ["a", "c"]);
-        assert_eq!(with_child[0].depth, 0, "the self-link never becomes its own parent");
+        assert_eq!(
+            with_child[0].depth, 0,
+            "the self-link never becomes its own parent"
+        );
     }
 
     #[test]
@@ -441,18 +462,8 @@ mod tests {
     #[test]
     fn cycles_never_rank_and_never_validate_a_parent() {
         let placements = placements(vec![
-            testutil::linked(
-                "a",
-                &path("a"),
-                "worker",
-                &identity::self_hash(&path("b")),
-            ),
-            testutil::linked(
-                "b",
-                &path("b"),
-                "worker",
-                &identity::self_hash(&path("a")),
-            ),
+            testutil::linked("a", &path("a"), "worker", &identity::self_hash(&path("b"))),
+            testutil::linked("b", &path("b"), "worker", &identity::self_hash(&path("a"))),
         ]);
         assert!(
             placements.is_empty(),

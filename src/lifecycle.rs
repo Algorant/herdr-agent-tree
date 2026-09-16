@@ -36,12 +36,16 @@ fn install_signal_handlers() {
 fn state_dir() -> R<PathBuf> {
     std::env::var("HERDR_PLUGIN_STATE_DIR")
         .map(PathBuf::from)
-        .map_err(|_| "HERDR_PLUGIN_STATE_DIR is not set; run agent-tree as a Herdr plugin command".to_string())
+        .map_err(|_| {
+            "HERDR_PLUGIN_STATE_DIR is not set; run agent-tree as a Herdr plugin command"
+                .to_string()
+        })
 }
 
 fn socket_path() -> R<String> {
-    std::env::var("HERDR_SOCKET_PATH")
-        .map_err(|_| "HERDR_SOCKET_PATH is not set; the plugin is scoped to the injected socket".to_string())
+    std::env::var("HERDR_SOCKET_PATH").map_err(|_| {
+        "HERDR_SOCKET_PATH is not set; the plugin is scoped to the injected socket".to_string()
+    })
 }
 
 fn now_ms() -> u64 {
@@ -152,7 +156,9 @@ fn ensure_subscriber(dir: &Path, socket: &str, wait_for_handoff: bool) -> R<()> 
             std::thread::sleep(Duration::from_millis(100));
         }
         if let Some(pid) = live_holder(dir, socket) {
-            eprintln!("agent-tree: subscriber {pid} already holds {socket}; not starting a second one");
+            eprintln!(
+                "agent-tree: subscriber {pid} already holds {socket}; not starting a second one"
+            );
             return Ok(());
         }
     }
@@ -204,7 +210,9 @@ pub fn run_subscriber() -> R<()> {
     let _guard = match acquire_lock(&dir, &socket) {
         Some(guard) => guard,
         None => {
-            eprintln!("agent-tree: another subscriber already holds the lock for {socket}; exiting");
+            eprintln!(
+                "agent-tree: another subscriber already holds the lock for {socket}; exiting"
+            );
             return Ok(());
         }
     };
@@ -230,7 +238,9 @@ pub fn run_subscriber() -> R<()> {
         match events.read() {
             Ok(Incoming::Timeout) => continue,
             Ok(Incoming::Closed) => {
-                eprintln!("agent-tree: Herdr closed the subscription; exiting without reconnecting");
+                eprintln!(
+                    "agent-tree: Herdr closed the subscription; exiting without reconnecting"
+                );
                 break;
             }
             Ok(Incoming::Message(message)) => {
@@ -397,7 +407,10 @@ mod tests {
             &mut view,
             &mut digest,
         );
-        assert!(outcome.is_ok(), "a paused pass must be a no-op: {outcome:?}");
+        assert!(
+            outcome.is_ok(),
+            "a paused pass must be a no-op: {outcome:?}"
+        );
         assert!(model.order.is_empty());
         assert!(model.rows.is_empty());
         assert!(digest.is_empty());
