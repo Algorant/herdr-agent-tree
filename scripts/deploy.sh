@@ -4,7 +4,7 @@
 # This is a development install from a checkout, not the normal user install path. A normal
 # user installs a published release artifact with scripts/release/install.sh; see README.md.
 #
-#   scripts/deploy.sh              install and apply
+#   scripts/deploy.sh              install, stage, register and reload
 #   scripts/deploy.sh --uninstall  remove and restore config
 #   scripts/deploy.sh --status     show what is currently in place
 #
@@ -17,7 +17,8 @@
 #   3. adds or updates the agent-tree [ui.sidebar.agents] rows block in
 #      ~/.config/herdr/config.toml (backed up first; a foreign block is left alone)
 #   4. registers the staged root in your user-global Herdr registry
-#   5. invokes agent-tree.apply so the projection appears without a restart
+#   5. invokes agent-tree.reload so the projection appears and the running subscriber is
+#      replaced by the just-staged build, without a server restart or pane disturbance
 #
 # A previous install that registered this source checkout (local:<repo>) is relinked
 # to the staged root; no server restart is needed for the move.
@@ -44,7 +45,7 @@ while [ "$#" -gt 0 ]; do
     --status)    MODE=status ;;
     --prefix)    [ "$#" -ge 2 ] || fail "--prefix needs a directory"; PREFIX=$2; shift ;;
     --herdr)     [ "$#" -ge 2 ] || fail "--herdr needs a path"; HERDR_BIN=$2; shift ;;
-    -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) fail "unknown option: $1" ;;
   esac
   shift
@@ -104,7 +105,7 @@ stage_root() {
   # source launcher.
   id=$(awk -F '"' '$1 ~ /^[[:space:]]*id[[:space:]]*=[[:space:]]*$/ { print $2; exit }' "$work/herdr-plugin.toml")
   [ "$id" = agent-tree ] || { rm -rf "$work"; fail "staged manifest has the wrong plugin id: ${id:-<none>}"; }
-  for action in start apply clear toggle; do
+  for action in start apply reload clear toggle; do
     grep -Fqx "command = [\"./src/agent-tree\", \"$action\"]" "$work/herdr-plugin.toml" \
       || { rm -rf "$work"; fail "staged manifest is missing the '$action' command"; }
   done
@@ -217,6 +218,8 @@ install)
   echo "  and register that staged root (not this source checkout), then add or update"
   echo "  the sidebar rows block in:"
   echo "    $CONFIG"
+  echo "  It then replaces any running subscriber with the just-staged build so the"
+  echo "  live projection runs the latest code, without restarting Herdr."
   echo "  Both are reversible with: $0 --uninstall"
   echo
   echo "  Known caveat: if a Worker's own Herdr tokens are ever dropped (server"
@@ -254,8 +257,14 @@ open(path, "w").write("".join(lines[:first + 1] + body + lines[last:]))
 PY
     step "updated the agent-tree sidebar rows block"
   elif grep -q "ui.sidebar.agents" "$CONFIG" 2>/dev/null; then
-    step "you already have a [ui.sidebar.agents] block this plugin does not manage; leaving it alone"
-    step "to show the tree, add \"\$agent_tree_row\" to one of its rows yourself"
+    step "you already have a [ui.sidebar.agents] block this plugin does not manage; leaving it byte-for-byte untouched"
+    if grep -qF '$agent_tree_row' "$CONFIG"; then
+      step "that block already references \$agent_tree_row; the tree will render"
+    else
+      step "to show the tree, add \$agent_tree_row to one of its rows, for example:"
+      printf '    rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]\n'
+      step "then reload the config: $HERDR_BIN server reload-config"
+    fi
   else
     cp -p "$CONFIG" "$CONFIG.agent-tree-backup.$(date +%Y%m%d-%H%M%S)"
     step "backed up $CONFIG"
@@ -270,7 +279,8 @@ EOF
   fi
 
   link_staged
-  herdr plugin action invoke agent-tree.apply >/dev/null 2>&1 && step "projection applied" || fail "apply failed; run '$0 --uninstall' to back out"
+  herdr plugin action invoke agent-tree.reload >/dev/null && step "subscriber replaced with this build and projection applied" \
+    || fail "reload failed; the running subscriber was left untouched. Resolve the reported holder and retry."
 
   # The sidebar rows come from config.toml, so the running server has to re-read it.
   # This reloads configuration only; it does not restart the server or disturb panes.

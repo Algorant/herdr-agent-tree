@@ -4,6 +4,7 @@
 //! Subcommands are invoked by the plugin manifest:
 //!   start       startup hook: ensure exactly one subscriber for this server
 //!   apply       explicit re-apply (enable does not run startup hooks)
+//!   reload      deploy-grade re-apply: replace the running subscriber with this build
 //!   clear       remove only plugin-owned tokens and a source-matched view
 //!   toggle      flip the paused flag and apply or clear immediately
 //!   subscriber  internal: the long-lived, event-driven projection process
@@ -27,11 +28,12 @@ fn main() -> ExitCode {
     let outcome = match command.as_str() {
         "start" => lifecycle::start(),
         "apply" => lifecycle::apply(),
+        "reload" => lifecycle::reload(),
         "clear" => lifecycle::clear(),
         "toggle" => lifecycle::toggle(),
         "subscriber" => lifecycle::run_subscriber(),
         other => {
-            eprintln!("agent-tree: unknown command {other:?}; expected start, apply, clear, toggle or subscriber");
+            eprintln!("agent-tree: unknown command {other:?}; expected start, apply, reload, clear, toggle or subscriber");
             return ExitCode::from(2);
         }
     };

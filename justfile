@@ -6,6 +6,6 @@ test:
 build:
     cargo build --locked --release --manifest-path Cargo.toml
 
-# Rebuild, stage, register and apply this checkout against the live Herdr server.
+# Rebuild, stage, register and reload this checkout against the live Herdr server.
 deploy:
     ./scripts/deploy.sh

@@ -62,8 +62,12 @@ standard test harness and needs no running Herdr server, no socket and no networ
 identity recomputation and self-validation, unique parent resolution and the tokenless-parent
 refinement, every contract C5 degenerate case, preorder emission with family contiguity and
 native ordering, the rank format and its ceiling, the decoration grammar and 20-character cap,
-the paused flag, and the CLI boundary where `apply` clears the paused flag while `clear` leaves
-it. Hosted CI runs `scripts/check.sh --no-e2e` because its runner has no Herdr or Pi.
+the paused flag, the verified reload holder checks (including the `(deleted)` staged binary),
+and the CLI boundary where `apply` clears the paused flag while `clear` leaves it.
+`tests/shell/dev-reload.sh` drives the real `scripts/deploy.sh` against a fake `herdr`, a fake
+`cargo` and a local socket server to cover first install, repeated reload, stale-lock recovery
+and foreign-holder refusal without a live Herdr server. Hosted CI runs
+`scripts/check.sh --no-e2e` because its runner has no Herdr or Pi.
 
 ## End-to-end test
 
@@ -193,15 +197,36 @@ does this when Herdr is found) and remove the old one when you are satisfied. Th
 ### Development install from a checkout
 
 `just deploy` (which runs `scripts/deploy.sh`) is the **development install** from this
-checkout. It builds the release binary, stages a self-contained plugin root at
-`${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/stage`, registers **that staged root**
-(not this checkout), adds or updates the sidebar rows block in `config.toml`, applies the
-projection and reloads the config. It is the sole rapid checkout dogfood loop:
+checkout and the sole rapid checkout dogfood loop. It builds the release binary, stages a
+self-contained plugin root at `${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/stage`,
+registers **that staged root** (not this checkout), adds or updates the sidebar rows block in
+`config.toml`, and then replaces the running subscriber with the just-staged build and
+re-applies the projection, without restarting the server or disturbing panes:
 
 ```sh
-just deploy               # build, stage, register, configure and apply
+just deploy               # build, stage, register, configure and reload the live subscriber
 scripts/deploy.sh --status     # show what is in place
 scripts/deploy.sh --uninstall  # reverse registration and the config block
+```
+
+"Replaces the subscriber" is literal and verified. Restaging alone would not be enough: an
+older subscriber process can keep holding `subscriber-<tag>.lock` and answer later events
+with its in-memory binary. `agent-tree.reload` guarantees the sole subscriber is started from
+the running (newly staged) binary. Before signaling a live holder it requires every identity
+signal to agree: the same UID, `HERDR_PLUGIN_ID=agent-tree`, the exact injected
+`HERDR_SOCKET_PATH` and `HERDR_PLUGIN_STATE_DIR`, an `agent-tree subscriber` argv, and an
+executable inside this deploy's own staged install path (the `stage/` root or its exact
+`.stage-old.*` sibling). No holder-reported environment value can widen that executable set.
+A dead or stale lock is recovered. Anything unverifiable or foreign fails clearly, is never
+signaled, and no replacement is started.
+
+`apply` is unchanged and narrower: it only ensures some subscriber is present and re-installs
+the projection once. Use it to restore the projection after a mid-session socket loss, or
+invoke the `reload` action directly:
+
+```sh
+herdr plugin action invoke agent-tree.apply
+herdr plugin action invoke agent-tree.reload
 ```
 
 The staged layout follows the `herdr-notifs-plus` development staging approach: a complete
@@ -216,11 +241,21 @@ plugin root whose `src/<name>` is the real binary rather than a launcher.
 
 Because the staged `src/agent-tree` is the release binary, the staged plugin depends on neither
 the repository checkout nor `target/`: `cargo clean`, a `target/` wipe, or moving the checkout
-does not affect it. Re-run `just deploy` to rebuild and restage. The staging directory is
-local hidden state, so this is not the documented path for a normal user.
+does not affect it. Re-run `just deploy` to rebuild, restage and replace the live subscriber.
+The staging directory is local hidden state, so this is not the documented path for a normal
+user.
+
+This loop is not the same as the other two paths. A normal user installs a published release
+with `scripts/release/install.sh`, which verifies a caller-pinned checksum, never edits
+`config.toml`, and registers the plugin **disabled** by default. `scripts/stage-local.sh` is
+inert local staging: it writes a complete plugin root under the Cargo target directory and
+never links it or touches user state.
 
 An install made earlier with `herdr plugin link <repo>/. --enabled` registered the source
-checkout; running `just deploy` relinks it to the staged root with no server restart.
+checkout; running `just deploy` relinks it to the staged root. If a subscriber started from
+that checkout is still running, `reload` refuses it as outside the staged install path and
+does not signal it; stop that process manually (or let it exit with the server) and run
+`just deploy` again.
 Registering the checkout by hand also remains available for development:
 
 ```sh

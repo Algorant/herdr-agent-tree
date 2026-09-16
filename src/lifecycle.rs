@@ -83,8 +83,19 @@ fn read_lock(path: &Path) -> Option<LockInfo> {
     })
 }
 
+/// True when the pid exists, whether or not this user may signal it.
+///
+/// `kill(pid, 0)` reports `EPERM` for a live process owned by another user. Treating that
+/// as dead would silently discard a foreign lock and start a competing subscriber, so
+/// `EPERM` counts as alive; the verification path then refuses it instead of signaling it.
 fn pid_alive(pid: i32) -> bool {
-    pid > 0 && unsafe { libc::kill(pid, 0) == 0 }
+    if pid <= 0 {
+        return false;
+    }
+    if unsafe { libc::kill(pid, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 fn live_holder(dir: &Path, socket: &str) -> Option<i32> {
@@ -120,6 +131,318 @@ fn acquire_lock(dir: &Path, socket: &str) -> Option<LockGuard> {
         return None;
     }
     Some(LockGuard { path })
+}
+
+fn proc_uid(pid: i32) -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(format!("/proc/{pid}"))
+        .ok()
+        .map(|metadata| metadata.uid())
+}
+
+fn proc_environ(pid: i32) -> Option<Vec<(String, String)>> {
+    let raw = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+    if raw.is_empty() {
+        return None;
+    }
+    Some(
+        raw.split(|byte| *byte == 0)
+            .filter_map(|entry| {
+                let text = String::from_utf8_lossy(entry);
+                let (key, value) = text.split_once('=')?;
+                Some((key.to_string(), value.to_string()))
+            })
+            .collect(),
+    )
+}
+
+fn proc_cmdline(pid: i32) -> Option<Vec<String>> {
+    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let argv: Vec<String> = raw
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| String::from_utf8_lossy(entry).into_owned())
+        .collect();
+    if argv.is_empty() {
+        None
+    } else {
+        Some(argv)
+    }
+}
+
+/// The kernel appends `" (deleted)"` once an executable is unlinked. `scripts/deploy.sh`
+/// atomically replaces the stage directory by renaming it to a `.stage-old.*` sibling and
+/// then deleting it, so a still-running subscriber's `/proc/<pid>/exe` is exactly that old
+/// sibling path with the suffix. Normalizing the suffix away is what lets the replacement
+/// verify the process it is about to signal instead of mistaking it for a foreign one.
+fn proc_exe(pid: i32) -> Option<PathBuf> {
+    let raw = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
+    let text = raw.to_string_lossy();
+    let normalized = text.strip_suffix(" (deleted)").unwrap_or(text.as_ref());
+    Some(PathBuf::from(normalized))
+}
+
+fn env_value<'a>(environ: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    environ
+        .iter()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value.as_str())
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn refuse(pid: i32, why: &str) -> String {
+    format!(
+        "pid {pid} holds this plugin's subscriber lock but {why}; refusing to signal it or start a replacement (resolve pid {pid} manually)"
+    )
+}
+
+/// True when a normalized `/proc/<pid>/exe` path is one of this plugin's own binaries.
+///
+/// The trusted set is derived only from the running reload executable, never from a holder's
+/// self-reported environment: a same-user process can set `HERDR_PLUGIN_ROOT` to anything.
+/// The reload executable's own staged root is trusted directly, and an atomically replaced
+/// stage is trusted through its exact `.stage-old.*` sibling under the same prefix (the path
+/// a still-running subscriber's `(deleted)` link names after `deploy.sh` renames and deletes
+/// the previous stage).
+fn trusted_binary(exe: &Path) -> bool {
+    std::env::current_exe()
+        .map(|current| trusted_binary_for(&current, exe))
+        .unwrap_or(false)
+}
+
+fn trusted_binary_for(current: &Path, exe: &Path) -> bool {
+    if !exe.file_name().is_some_and(|name| name == "agent-tree") {
+        return false;
+    }
+    if exe == current {
+        return true;
+    }
+    let Some(stage_root) = current.parent().and_then(Path::parent) else {
+        return false;
+    };
+    if exe.starts_with(stage_root) {
+        return true;
+    }
+    stage_root
+        .parent()
+        .is_some_and(|prefix| is_replaced_stage(exe, prefix))
+}
+
+/// True when `exe` sits under `base` inside a `.stage-old.*` directory, the sibling of a
+/// stage directory that `scripts/deploy.sh` renames before deleting it.
+fn is_replaced_stage(exe: &Path, base: &Path) -> bool {
+    let Ok(relative) = exe.strip_prefix(base) else {
+        return false;
+    };
+    matches!(
+        relative.components().next(),
+        Some(std::path::Component::Normal(first))
+            if first.to_string_lossy().starts_with(".stage-old.")
+    )
+}
+
+/// Confirms a live lock holder is this plugin's own subscriber for this socket before any
+/// signal is sent. Every signal is required to agree: same UID, the plugin id, socket and
+/// state directory in the process environment, `agent-tree subscriber` argv, and a
+/// normalized executable path inside the plugin's own staged install paths.
+fn verify_holder(pid: i32, dir: &Path, socket: &str) -> R<()> {
+    let Some(uid) = proc_uid(pid) else {
+        return Err(refuse(pid, "its /proc ownership cannot be read"));
+    };
+    let euid = unsafe { libc::geteuid() };
+    if uid != euid {
+        return Err(refuse(
+            pid,
+            &format!("it runs as uid {uid}, not this user's uid {euid}"),
+        ));
+    }
+    let Some(environ) = proc_environ(pid) else {
+        return Err(refuse(pid, "its /proc environ is unreadable or empty"));
+    };
+    match env_value(&environ, "HERDR_PLUGIN_ID") {
+        Some("agent-tree") => {}
+        Some(other) => {
+            return Err(refuse(
+                pid,
+                &format!("its HERDR_PLUGIN_ID is {other:?}, not agent-tree"),
+            ))
+        }
+        None => return Err(refuse(pid, "its HERDR_PLUGIN_ID is unset")),
+    }
+    match env_value(&environ, "HERDR_SOCKET_PATH") {
+        Some(path) if path == socket => {}
+        Some(other) => {
+            return Err(refuse(
+                pid,
+                &format!("its HERDR_SOCKET_PATH is {other:?}, not the injected {socket:?}"),
+            ))
+        }
+        None => return Err(refuse(pid, "its HERDR_SOCKET_PATH is unset")),
+    }
+    match env_value(&environ, "HERDR_PLUGIN_STATE_DIR") {
+        Some(state) if same_path(Path::new(state), dir) => {}
+        Some(state) => {
+            return Err(refuse(
+                pid,
+                &format!(
+                    "its HERDR_PLUGIN_STATE_DIR is {state:?}, not {}",
+                    dir.display()
+                ),
+            ))
+        }
+        None => return Err(refuse(pid, "its HERDR_PLUGIN_STATE_DIR is unset")),
+    }
+    let Some(argv) = proc_cmdline(pid) else {
+        return Err(refuse(pid, "its /proc cmdline is unreadable"));
+    };
+    let argv0_is_agent_tree = argv
+        .first()
+        .and_then(|arg| Path::new(arg).file_name())
+        .is_some_and(|name| name == "agent-tree");
+    let argv1_is_subscriber = argv.get(1).map(String::as_str) == Some("subscriber");
+    if !argv0_is_agent_tree || !argv1_is_subscriber {
+        return Err(refuse(
+            pid,
+            &format!("its argv is {argv:?}, not an `agent-tree subscriber` process"),
+        ));
+    }
+    let Some(exe) = proc_exe(pid) else {
+        return Err(refuse(pid, "its /proc executable link is unreadable"));
+    };
+    if !exe.file_name().is_some_and(|name| name == "agent-tree") {
+        return Err(refuse(
+            pid,
+            &format!(
+                "its executable is {}, not an agent-tree binary",
+                exe.display()
+            ),
+        ));
+    }
+    if !trusted_binary(&exe) {
+        return Err(refuse(
+            pid,
+            &format!(
+                "its executable {} is outside this plugin's own staged install paths",
+                exe.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Returns the verified live subscriber pid for this socket, or removes and ignores a dead
+/// process's stale lock. A corrupt, socket-mismatched, foreign or unverifiable holder is a
+/// hard error: nothing is signaled and no replacement is started.
+fn live_verified_holder(dir: &Path, socket: &str) -> R<Option<i32>> {
+    let path = lock_path(dir, socket);
+    let info = match read_lock(&path) {
+        Some(info) => info,
+        None => {
+            if path.exists() {
+                return Err(format!(
+                    "the subscriber lock {} is corrupt or unreadable; refusing to signal any process (remove it manually if no subscriber is running)",
+                    path.display()
+                ));
+            }
+            return Ok(None);
+        }
+    };
+    if info.socket != socket {
+        return Err(format!(
+            "the subscriber lock {} names socket {:?}, not this server's {:?}; refusing to signal pid {}",
+            path.display(),
+            info.socket,
+            socket,
+            info.pid
+        ));
+    }
+    if !pid_alive(info.pid) {
+        // The recorded process is gone: recover the stale lock so a fresh subscriber can
+        // take it.
+        let _ = std::fs::remove_file(&path);
+        return Ok(None);
+    }
+    verify_holder(info.pid, dir, socket)?;
+    Ok(Some(info.pid))
+}
+
+/// Replaces the verified live subscriber with one started from the running executable.
+///
+/// The old process is signaled only after verification, then awaited with a bound; on
+/// timeout this fails without spawning, so two subscribers never race for the lock.
+fn replace_subscriber(dir: &Path, socket: &str) -> R<()> {
+    if let Some(pid) = live_verified_holder(dir, socket)? {
+        signal_subscriber(pid)?;
+        wait_for_subscriber_exit(dir, socket, pid)?;
+    }
+    let pid = spawn_subscriber(dir)?;
+    wait_for_new_subscriber(dir, socket, pid)
+}
+
+fn signal_subscriber(pid: i32) -> R<()> {
+    if unsafe { libc::kill(pid, libc::SIGTERM) } == 0 {
+        eprintln!("agent-tree: replacing subscriber pid {pid}");
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        // It exited between verification and the signal; nothing is left to stop.
+        return Ok(());
+    }
+    Err(format!(
+        "cannot signal the verified subscriber pid {pid}: {error}"
+    ))
+}
+
+/// Bounded wait for the verified subscriber to exit and release its lock. A timeout is an
+/// error and no replacement is spawned while the old holder may still own the lock.
+fn wait_for_subscriber_exit(dir: &Path, socket: &str, pid: i32) -> R<()> {
+    let path = lock_path(dir, socket);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if !pid_alive(pid) {
+            // Any lock still naming the exited process is stale; drop it before spawning.
+            if read_lock(&path).is_some_and(|info| info.pid == pid) {
+                let _ = std::fs::remove_file(&path);
+            }
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "subscriber pid {pid} did not exit and release {} after SIGTERM; not starting a replacement",
+                path.display()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Bounded wait for the freshly spawned subscriber to own the lock, so `reload` returns
+/// only once the new build is the confirmed sole subscriber.
+fn wait_for_new_subscriber(dir: &Path, socket: &str, pid: i32) -> R<()> {
+    let path = lock_path(dir, socket);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if read_lock(&path).is_some_and(|info| info.pid == pid) && pid_alive(pid) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "the replacement subscriber pid {pid} did not acquire {} within 10s",
+                path.display()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// Startup entrypoint: ensures exactly one subscriber per server socket.
@@ -163,10 +486,11 @@ fn ensure_subscriber(dir: &Path, socket: &str, wait_for_handoff: bool) -> R<()> 
         }
     }
 
-    spawn_subscriber(dir)
+    spawn_subscriber(dir)?;
+    Ok(())
 }
 
-fn spawn_subscriber(dir: &Path) -> R<()> {
+fn spawn_subscriber(dir: &Path) -> R<i32> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot resolve own executable: {e}"))?;
     let log_path = dir.join("subscriber.log");
     let log = std::fs::OpenOptions::new()
@@ -196,8 +520,9 @@ fn spawn_subscriber(dir: &Path) -> R<()> {
     let child = command
         .spawn()
         .map_err(|e| format!("cannot start the agent-tree subscriber: {e}"))?;
-    eprintln!("agent-tree: started subscriber pid {}", child.id());
-    Ok(())
+    let pid = child.id() as i32;
+    eprintln!("agent-tree: started subscriber pid {pid}");
+    Ok(pid)
 }
 
 /// The single long-lived process: subscribe first, then reconcile on every relevant event.
@@ -347,6 +672,25 @@ pub fn apply() -> R<()> {
     pass(&socket, &paused, &mut model, &mut view, &mut digest)
 }
 
+/// Deploy-grade entrypoint: guarantee the sole subscriber runs this build, then re-apply.
+///
+/// Unlike `apply`, which only ensures some subscriber is present, `reload` replaces a live
+/// subscriber with one started from the running executable. Every holder is verified before
+/// it is signaled, a dead lock is recovered, and a foreign or unverifiable holder fails
+/// clearly without being touched. The projection is then confirmed with a synchronous pass.
+pub fn reload() -> R<()> {
+    let dir = state_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
+    let socket = socket_path()?;
+    replace_subscriber(&dir, &socket)?;
+    let paused = pause::path(&dir, &socket);
+    pause::set(&paused, false)?;
+    let mut model = Model::default();
+    let mut view = ViewState::default();
+    let mut digest = String::new();
+    pass(&socket, &paused, &mut model, &mut view, &mut digest)
+}
+
 /// Explicit `clear` action: removes only the plugin's own tokens and its own view.
 ///
 /// It does not touch the paused flag: a clear while paused stays clear instead of
@@ -416,5 +760,83 @@ mod tests {
         assert!(digest.is_empty());
         assert!(!view.owned());
         assert!(!view.passive());
+    }
+
+    #[test]
+    fn trusted_binary_accepts_only_the_current_stage_and_its_replaced_sibling() {
+        let prefix = Path::new("/home/user/.local/share/herdr-agent-tree");
+        let current = prefix.join("stage/src/agent-tree");
+        let replaced = prefix.join(".stage-old.42/src/agent-tree");
+
+        assert!(trusted_binary_for(&current, &current));
+        assert!(
+            trusted_binary_for(&current, &replaced),
+            "the (deleted) sibling of an atomically replaced stage still belongs to the plugin"
+        );
+        assert!(trusted_binary_for(
+            &current,
+            &prefix.join("stage/other/agent-tree")
+        ));
+        assert!(!trusted_binary_for(
+            &current,
+            Path::new("/usr/bin/agent-tree")
+        ));
+        assert!(!trusted_binary_for(&current, Path::new("/tmp/agent-tree")));
+        assert!(!trusted_binary_for(
+            &current,
+            Path::new("/home/user/.local/share/herdr-agent-tree/other/agent-tree")
+        ));
+        assert!(!trusted_binary_for(
+            &current,
+            Path::new("/home/user/.local/share/herdr-agent-tree/other/stage/src/agent-tree")
+        ));
+    }
+
+    #[test]
+    fn unreadable_lock_and_wrong_socket_are_refused() {
+        let dir = TempDir::new("refuse-lock");
+        let socket = "/tmp/agent-tree-refuse.sock";
+        let path = lock_path(dir.path(), socket);
+        std::fs::write(&path, b"not json").unwrap();
+        let corrupt = live_verified_holder(dir.path(), socket).unwrap_err();
+        assert!(corrupt.contains("corrupt or unreadable"), "{corrupt}");
+
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"pid\":{},\"socket_path\":\"/tmp/other.sock\",\"started_unix_ms\":0}}",
+                std::process::id()
+            ),
+        )
+        .unwrap();
+        let mismatch = live_verified_holder(dir.path(), socket).unwrap_err();
+        assert!(mismatch.contains("names socket"), "{mismatch}");
+    }
+
+    #[test]
+    fn a_dead_pid_is_a_recovered_stale_lock() {
+        let dir = TempDir::new("stale-lock");
+        let socket = "/tmp/agent-tree-stale.sock";
+        let path = lock_path(dir.path(), socket);
+        // PID 1 is alive but is never this plugin's process; use a dead pid instead by
+        // asking for a pid that has already been reaped.
+        let dead = dead_pid();
+        std::fs::write(
+            &path,
+            format!("{{\"pid\":{dead},\"socket_path\":\"{socket}\",\"started_unix_ms\":0}}"),
+        )
+        .unwrap();
+        assert_eq!(live_verified_holder(dir.path(), socket).unwrap(), None);
+        assert!(!path.exists(), "the stale lock must be removed");
+    }
+
+    fn dead_pid() -> i32 {
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn true");
+        let pid = child.id() as i32;
+        let _ = child.wait();
+        // The child was reaped by us, so this pid is gone (until reuse).
+        pid
     }
 }

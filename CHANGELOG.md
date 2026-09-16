@@ -8,6 +8,10 @@ semantic versioning after its first public release.
 
 ### Added
 
+- A verified latest-checkout reload: `agent-tree.reload` (and the deploy workflow's use of
+  it) replaces the running subscriber with the just-staged build, recovers a dead lock, and
+  refuses an unverifiable or foreign holder without signaling it, so `just deploy` is safe to
+  repeat against a live server. Hermetic coverage lives in `tests/shell/dev-reload.sh`.
 - Release packaging for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`:
   deterministic per-target archives, per-archive `.sha256` sidecars and an aggregate
   `agent-tree-v<version>-SHA256SUMS` file.
@@ -22,10 +26,11 @@ semantic versioning after its first public release.
 ### Changed
 
 - The repository is organized around three `just` recipes: `just test` (the complete gate,
-  including the noninteractive `tests/e2e/sidebar.sh` isolated Herdr test), `just build`, and
-  `just deploy` (the checkout development install now at `scripts/deploy.sh`). Release
-  internals live under `scripts/release/`, shell tests under `tests/shell/`, and the owner
-  allowlist at `release/targets.txt`.
+  including the noninteractive `tests/e2e/sidebar.sh` isolated Herdr test and the hermetic
+  `tests/shell/dev-reload.sh` deploy/reload suite), `just build`, and `just deploy` (the
+  checkout development install now at `scripts/deploy.sh`, which stages and replaces the live
+  subscriber). Release internals live under `scripts/release/`, shell tests under
+  `tests/shell/`, and the owner allowlist at `release/targets.txt`.
 - `README.md` documents the release install as the supported path for a normal user and
   labels `scripts/deploy.sh` a development install from a checkout.
 
