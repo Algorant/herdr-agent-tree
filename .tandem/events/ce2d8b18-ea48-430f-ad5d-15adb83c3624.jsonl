@@ -7,3 +7,4 @@
 {"ts":"2026-09-16T02:14:53Z","event":"task.completed","id":"task-1","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":7}
 {"ts":"2026-09-16T02:15:07Z","event":"accord.claimed","id":"task-3","summary":"Accord claim for task-3","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":8}
 {"ts":"2026-09-16T02:18:26Z","event":"accord.delivered","id":"task-3","summary":"Accord deliver for task-3","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":9}
+{"ts":"2026-09-16T02:18:26Z","event":"task.completed","id":"task-3","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":10}
