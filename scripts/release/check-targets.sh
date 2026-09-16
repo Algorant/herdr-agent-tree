@@ -2,9 +2,9 @@
 # Validate the tracked owner approval and version-specific native-evidence allowlist.
 set -efu
 PROGRAM=${0##*/}
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 root=$ROOT
-manifest=$ROOT/release-targets.txt
+manifest=$ROOT/release/targets.txt
 requested=
 fail() { printf '%s: %s\n' "$PROGRAM" "$*" >&2; exit 1; }
 while [ "$#" -gt 0 ]; do

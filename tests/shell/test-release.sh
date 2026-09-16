@@ -1,12 +1,12 @@
 #!/bin/sh
 # Hermetic deterministic packaging and release-gate tests. Nothing is published.
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
-PACKAGE=$ROOT/scripts/package-release.sh
-CHECK=$ROOT/scripts/check-release.sh
-SUMS=$ROOT/scripts/write-checksums.sh
-TARGET_CHECK=$ROOT/scripts/check-target-binaries.sh
-PROMOTION_CHECK=$ROOT/scripts/check-release-targets.sh
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+PACKAGE=$ROOT/scripts/release/package.sh
+CHECK=$ROOT/scripts/release/check-release.sh
+SUMS=$ROOT/scripts/release/checksums.sh
+TARGET_CHECK=$ROOT/scripts/release/check-binaries.sh
+PROMOTION_CHECK=$ROOT/scripts/release/check-targets.sh
 SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/agent-tree-release-tests.XXXXXX")
 trap 'rm -rf -- "$SANDBOX"' EXIT HUP INT TERM
 PASS=0
@@ -74,20 +74,20 @@ pass 'candidate archives include exactly one project LICENSE'
 # Drive the real installer with local archives and caller-pinned digests.
 for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
     archive=$SANDBOX/one/agent-tree-v0.1.0-$target.tar.gz
-    "$ROOT/test/install-candidate.sh" "$archive" "$target" "$SANDBOX/install-$target"
+    "$ROOT/tests/shell/install-candidate.sh" "$archive" "$target" "$SANDBOX/install-$target"
 done
 pass 'both packaged targets install with independent caller-pinned digests'
 relative_archive=$SANDBOX/one/agent-tree-v0.1.0-x86_64-unknown-linux-musl.tar.gz
 (
     cd "$SANDBOX"
-    "$ROOT/test/install-candidate.sh" "$relative_archive" x86_64-unknown-linux-musl relative-install
+    "$ROOT/tests/shell/install-candidate.sh" "$relative_archive" x86_64-unknown-linux-musl relative-install
 )
 [ -x "$SANDBOX/relative-install/0.1.0/x86_64-unknown-linux-musl/src/agent-tree" ] \
     || fail 'relative candidate install prefix was not canonicalized under the caller cwd'
 pass 'candidate helper canonicalizes a relative isolated prefix'
 
 expect_failure 'final publication packaging fails closed without promoted targets' env SOURCE_DATE_EPOCH=$EPOCH GITHUB_EVENT_NAME=push GITHUB_REF=refs/tags/v0.1.0 "$PACKAGE" --mode final --target x86_64-unknown-linux-musl --binary-dir "$SANDBOX/bin" --output "$SANDBOX/final"
-mkdir -p "$SANDBOX/source/docs/release-evidence"
+mkdir -p "$SANDBOX/source/docs/release-evidence" "$SANDBOX/source/release"
 for file in Cargo.toml herdr-plugin.toml README.md CHANGELOG.md LICENSE; do cp "$ROOT/$file" "$SANDBOX/source/$file"; done
 cat >"$SANDBOX/source/docs/release-evidence/x86.md" <<'EOF'
 target: x86_64-unknown-linux-musl
@@ -96,16 +96,16 @@ candidate_sha256: 00000000000000000000000000000000000000000000000000000000000000
 native_sidebar_evidence: passed
 owner_approved_by: test-owner
 EOF
-printf '%s\n' 'x86_64-unknown-linux-musl|docs/release-evidence/x86.md|test-owner' >"$SANDBOX/source/release-targets.txt"
+printf '%s\n' 'x86_64-unknown-linux-musl|docs/release-evidence/x86.md|test-owner' >"$SANDBOX/source/release/targets.txt"
 expect_failure 'final packaging rejects a non-tag trigger' env READELF="$SANDBOX/readelf" FAKE_MACHINE='Advanced Micro Devices X86-64' SOURCE_DATE_EPOCH=$EPOCH GITHUB_EVENT_NAME=workflow_dispatch GITHUB_REF=refs/tags/v0.1.0 "$PACKAGE" --source "$SANDBOX/source" --mode final --target x86_64-unknown-linux-musl --binary-dir "$SANDBOX/bin" --output "$SANDBOX/final-event"
 expect_failure 'final packaging rejects a mismatched tag' env READELF="$SANDBOX/readelf" FAKE_MACHINE='Advanced Micro Devices X86-64' SOURCE_DATE_EPOCH=$EPOCH GITHUB_EVENT_NAME=push GITHUB_REF=refs/tags/v9.9.9 "$PACKAGE" --source "$SANDBOX/source" --mode final --target x86_64-unknown-linux-musl --binary-dir "$SANDBOX/bin" --output "$SANDBOX/final-tag"
 GITHUB_EVENT_NAME=push GITHUB_REF=refs/tags/v0.1.0 READELF="$SANDBOX/readelf" FAKE_MACHINE='Advanced Micro Devices X86-64' SOURCE_DATE_EPOCH=$EPOCH "$PACKAGE" --source "$SANDBOX/source" --mode final --target x86_64-unknown-linux-musl --binary-dir "$SANDBOX/bin" --output "$SANDBOX/final-ok" >/dev/null
 [ "$(tar -tzf "$SANDBOX/final-ok/agent-tree-v0.1.0-x86_64-unknown-linux-musl.tar.gz" | grep -Fxc 'agent-tree-v0.1.0-x86_64-unknown-linux-musl/LICENSE')" -eq 1 ] || fail 'final package does not contain exactly one project LICENSE'
 pass 'owner-gated final mode includes exactly one project LICENSE'
-"$SUMS" "$SANDBOX/final-ok" --targets-file "$SANDBOX/source/release-targets.txt" --targets-root "$SANDBOX/source" >/dev/null
-"$CHECK" --assets "$SANDBOX/final-ok" --targets-file "$SANDBOX/source/release-targets.txt" --targets-root "$SANDBOX/source"
+"$SUMS" "$SANDBOX/final-ok" --targets-file "$SANDBOX/source/release/targets.txt" --targets-root "$SANDBOX/source" >/dev/null
+"$CHECK" --assets "$SANDBOX/final-ok" --targets-file "$SANDBOX/source/release/targets.txt" --targets-root "$SANDBOX/source"
 cp "$SANDBOX/one/agent-tree-v0.1.0-aarch64-unknown-linux-musl.tar.gz"* "$SANDBOX/final-ok/"
-expect_failure 'mixed final asset sets reject unpromoted aarch64' "$CHECK" --assets "$SANDBOX/final-ok" --targets-file "$SANDBOX/source/release-targets.txt" --targets-root "$SANDBOX/source"
+expect_failure 'mixed final asset sets reject unpromoted aarch64' "$CHECK" --assets "$SANDBOX/final-ok" --targets-file "$SANDBOX/source/release/targets.txt" --targets-root "$SANDBOX/source"
 expect_failure 'unpromoted aarch64 cannot enter final assets' env READELF="$SANDBOX/readelf" FAKE_MACHINE=AArch64 SOURCE_DATE_EPOCH=$EPOCH GITHUB_EVENT_NAME=push GITHUB_REF=refs/tags/v0.1.0 "$PACKAGE" --source "$SANDBOX/source" --mode final --target aarch64-unknown-linux-musl --binary-dir "$SANDBOX/bin" --output "$SANDBOX/final-arm"
 : >"$SANDBOX/empty-targets.txt"
 expect_failure 'empty promotion data fails closed' "$PROMOTION_CHECK" --root "$SANDBOX/source" --manifest "$SANDBOX/empty-targets.txt"
@@ -132,12 +132,12 @@ expect_failure 'whitespace evidence paths fail closed' "$PROMOTION_CHECK" --root
 pass 'promotion manifest permits only version-bound owner-approved native evidence'
 cp -a "$SANDBOX/source" "$SANDBOX/git-source"
 git -C "$SANDBOX/git-source" init -q
-git -C "$SANDBOX/git-source" add herdr-plugin.toml release-targets.txt
-expect_failure 'Git checkout rejects untracked native evidence' "$PROMOTION_CHECK" --root "$SANDBOX/git-source" --manifest "$SANDBOX/git-source/release-targets.txt"
+git -C "$SANDBOX/git-source" add herdr-plugin.toml release/targets.txt
+expect_failure 'Git checkout rejects untracked native evidence' "$PROMOTION_CHECK" --root "$SANDBOX/git-source" --manifest "$SANDBOX/git-source/release/targets.txt"
 git -C "$SANDBOX/git-source" add docs/release-evidence/x86.md
-"$PROMOTION_CHECK" --root "$SANDBOX/git-source" --manifest "$SANDBOX/git-source/release-targets.txt" --target x86_64-unknown-linux-musl
-git -C "$SANDBOX/git-source" rm --cached -q release-targets.txt
-expect_failure 'Git checkout rejects an untracked promotion manifest' "$PROMOTION_CHECK" --root "$SANDBOX/git-source" --manifest "$SANDBOX/git-source/release-targets.txt"
+"$PROMOTION_CHECK" --root "$SANDBOX/git-source" --manifest "$SANDBOX/git-source/release/targets.txt" --target x86_64-unknown-linux-musl
+git -C "$SANDBOX/git-source" rm --cached -q release/targets.txt
+expect_failure 'Git checkout rejects an untracked promotion manifest' "$PROMOTION_CHECK" --root "$SANDBOX/git-source" --manifest "$SANDBOX/git-source/release/targets.txt"
 pass 'Git checkouts require tracked promotion manifests and evidence files'
 expect_failure 'source release check rejects a mismatched tag' "$CHECK" --ref refs/tags/v9.9.9
 sed 's/version = "0.1.0"/version = "bad"/' "$SANDBOX/source/herdr-plugin.toml" >"$SANDBOX/source/herdr-plugin.bad"

@@ -2,7 +2,7 @@
 # Install one local candidate through the real download interface with its caller-pinned digest.
 set -eu
 PROGRAM=${0##*/}
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 [ "$#" -eq 3 ] || { printf '%s\n' "usage: $PROGRAM ARCHIVE TARGET PREFIX" >&2; exit 2; }
 archive=$1
 target=$2
@@ -35,6 +35,6 @@ chmod 755 "$work/bin/curl"
 version=$(awk -F '"' '$1 ~ /^[[:space:]]*version[[:space:]]*=[[:space:]]*$/ { print $2; exit }' "$ROOT/herdr-plugin.toml")
 digest=$(sha256sum "$archive" | awk '{print $1}')
 FAKE_ARCHIVE=$archive HOME=$work/home PATH=$work/bin:/usr/bin:/bin \
-    "$ROOT/scripts/install.sh" --version "$version" --target "$target" --checksum "$digest" \
+    "$ROOT/scripts/release/install.sh" --version "$version" --target "$target" --checksum "$digest" \
     --prefix "$prefix" --no-link >/dev/null
 [ -x "$prefix/$version/$target/src/agent-tree" ]

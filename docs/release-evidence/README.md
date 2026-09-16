@@ -2,7 +2,7 @@
 
 One reviewed file per target and release version belongs in this directory. Evidence paths must
 be one safe Markdown basename directly in this directory. Nested paths, whitespace, symlinks
-and traversal are rejected by `scripts/check-release-targets.sh`.
+and traversal are rejected by `scripts/release/check-targets.sh`.
 
 Copy this template to a versioned name such as `v0.1.0-x86_64-unknown-linux-musl.md` only
 after all native human checks pass:
@@ -25,11 +25,11 @@ the candidate source commit, `SOURCE_DATE_EPOCH`, the installation command, the 
 plugin root, the lifecycle result, the TUI/sidebar observations and the review date. The exact
 fields above are the machine gate and each must occur once.
 
-After review, the owner adds the corresponding line to `release-targets.txt` in the same
+After review, the owner adds the corresponding line to `release/targets.txt` in the same
 reviewed release commit. The target, current `herdr-plugin.toml` version, candidate digest,
 passed status and approver must all match. Evidence for one version cannot authorize a later
 version. Aarch64 requires native aarch64 TUI/sidebar evidence; cross-built or emulated evidence
 is insufficient.
 
-`release-targets.txt` currently has no entries, so no target is approved and no release may be
+`release/targets.txt` currently has no entries, so no target is approved and no release may be
 published.

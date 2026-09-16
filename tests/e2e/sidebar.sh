@@ -1,72 +1,40 @@
 #!/usr/bin/env bash
 #
-# demo.sh — one-command demo of the agent-tree plugin in a throwaway Herdr instance.
+# Noninteractive isolated Herdr end-to-end test for the agent-tree sidebar.
 #
-# What it does, in order:
-#   1. preflight required binaries (and announce the resource cost)
-#   2. build the plugin
-#   3. create a fully isolated Herdr instance: own HOME, all XDG dirs and an explicit
-#      socket under a temp dir, verified at runtime against the resolved socket
-#   4. install the Pi publisher into the isolated HOME and launch 7 credential-free,
-#      idle Pi agents to obtain genuine agent_session values
-#   5. publish the pi-agency-shaped relationship tokens derived from those real session
-#      paths (never agent_tree_* tokens) so the plugin can validate a real delegation tree
-#   6. apply the plugin, verify the tree came from real identity validation, and show it
-#   7. stop the isolated server and remove the temp dir on exit (--keep leaves it running)
+# It builds the plugin, starts an isolated Herdr instance (own HOME, all XDG dirs and an
+# explicit socket, verified at runtime), installs the Pi publisher and launches 7
+# credential-free idle Pi agents to obtain genuine agent_session values. It publishes the
+# pi-agency-shaped relationship tokens derived from those real session paths (never
+# agent_tree_* tokens), applies the projection, asserts rank ordering, rejects a forged
+# agency_self, and asserts the rendered sidebar through a real tmux PTY.
 #
-# It never reads or writes the active Herdr server, its socket or ~/.config/herdr, and it
-# never registers the plugin in a user-global registry.
-#
-# Usage:
-#   ./demo.sh            # attach an isolated TUI to look at the sidebar
-#   ./demo.sh --print    # print the rendered sidebar as text (needs tmux)
-#   ./demo.sh --keep     # leave the isolated instance running on exit
-#   ./demo.sh --help
+# Everything it creates lives in one temp directory and is removed on exit, including on
+# failure or interrupt; the isolated server is stopped with it. It never reads or writes the
+# active Herdr server, its socket or ~/.config/herdr.
 set -euo pipefail
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-PLUGIN_DIR="$SCRIPT_DIR"
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+PLUGIN_DIR="$ROOT"
 
-MODE=attach
-KEEP=0
-
-usage() {
-    sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//' >&2
-    exit "${1:-0}"
-}
-
-for arg in "$@"; do
-    case "$arg" in
-        --print) MODE=print ;;
-        --keep) KEEP=1 ;;
-        -h|--help) usage 0 ;;
-        *) printf 'demo: unknown argument %s\n\n' "$arg" >&2; usage 2 ;;
-    esac
-done
-
-# Progress goes to stderr so --print can put the rendered sidebar on stdout.
+fail() { printf '\nsidebar-e2e: ERROR: %s\n' "$*" >&2; exit 1; }
 step() { printf '  -> %s\n' "$*" >&2; }
 log() { printf '\n== %s\n' "$*" >&2; }
-say() { printf '%s\n' "$*" >&2; }
-fail() { printf '\n demo: ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
-# 1. Preflight: every external command this demo needs, checked up front.
+# 1. Preflight: every external command this test needs, checked up front.
 # ---------------------------------------------------------------------------
 need() {
     command -v "$1" >/dev/null 2>&1 || fail "missing prerequisite: $1 ($2)"
 }
-need cargo  "Rust toolchain, used to build the plugin"
-need jq     "JSON parsing for Herdr CLI output"
+need cargo "Rust toolchain, used to build the plugin"
+need jq "JSON parsing for Herdr CLI output"
 need sha256sum "coreutils, used for the agency_self hash"
 need setsid "util-linux, used to detach the isolated server"
+need tmux "the rendered-sidebar assertion needs a real PTY"
 
-if [ "$MODE" = print ]; then
-    need tmux "only --print needs tmux (it renders the sidebar through a real PTY)"
-fi
-
-# Resolve the real Pi executable. Under mise, `command -v pi` may be a shim (a symlink to
-# the mise binary) that cannot run with an isolated HOME, so ask mise for the real path.
+# Resolve the real Pi executable. Under mise, `command -v pi` may be a shim that cannot run
+# with an isolated HOME, so ask mise for the real path.
 pi_real=""
 if command -v mise >/dev/null 2>&1; then
     pi_real=$(mise which pi 2>/dev/null || true)
@@ -74,11 +42,10 @@ fi
 if [ -z "$pi_real" ] || [ ! -x "$pi_real" ]; then
     pi_real=$(command -v pi 2>/dev/null || true)
 fi
-[ -x "$pi_real" ] || fail "missing prerequisite: pi (the demo launches real Pi agents to obtain genuine agent_session values)"
+[ -x "$pi_real" ] || fail "missing prerequisite: pi (needed for genuine agent_session values)"
 PI_DIR=$(CDPATH= cd -- "$(dirname -- "$pi_real")" && pwd)
 
-# Resolve the real Herdr binary. With an isolated HOME a mise shim for `herdr` fails
-# (mise cannot find its trust state), so resolve the real path before HOME changes.
+# Resolve the real Herdr binary before HOME changes; a mise shim fails with an isolated HOME.
 herdr_real=""
 if command -v mise >/dev/null 2>&1; then
     herdr_real=$(mise which herdr 2>/dev/null || true)
@@ -88,7 +55,6 @@ if [ -z "$herdr_real" ] || [ ! -x "$herdr_real" ]; then
 fi
 [ -x "$herdr_real" ] || fail "missing prerequisite: herdr (Herdr 0.9.0; https://herdr.dev)"
 HERDR_BIN=$(CDPATH= cd -- "$(dirname -- "$herdr_real")" && pwd)/$(basename -- "$herdr_real")
-# Every in-process Herdr call goes through this function, never through a mise shim.
 herdr() { "$HERDR_BIN" "$@"; }
 
 herdr_version=$("$HERDR_BIN" --version 2>/dev/null | awk '{print $2}')
@@ -96,28 +62,6 @@ herdr_version=$("$HERDR_BIN" --version 2>/dev/null | awk '{print $2}')
 if [ "$(printf '%s\n0.9.0\n' "$herdr_version" | sort -V | head -1)" != "0.9.0" ]; then
     fail "Herdr $herdr_version is older than the plugin's minimum 0.9.0"
 fi
-
-if [ "$MODE" = print ]; then
-    show="print the rendered sidebar"
-else
-    show="attach an isolated TUI"
-fi
-
-say "agent-tree demo"
-say ""
-say "This demo will:"
-say "  1. build ."
-say "  2. start an isolated Herdr server under a temporary directory (own HOME,"
-say "     XDG config/state/data/runtime, explicit socket)"
-say "  3. launch 7 credential-free, idle Pi agents it never prompts  (~25 s, ~1 GB RAM)"
-say "  4. apply the plugin and $show (isolated Herdr $herdr_version)"
-say ""
-say "Everything it creates lives in one temp directory and is removed on exit, including"
-say "on failure; the isolated server is stopped and its detached subscriber exits with it."
-if [ "$KEEP" = 1 ]; then
-    say "Because --keep is set, the instance will be LEFT RUNNING instead."
-fi
-say "It never touches your active Herdr server, its socket, or ~/.config/herdr."
 
 # ---------------------------------------------------------------------------
 # 2. Build the plugin.
@@ -130,14 +74,14 @@ cargo build --locked --release --manifest-path "$PLUGIN_DIR/Cargo.toml"
 # 3. Isolation environment. Set before any command that talks to Herdr, and clear the
 #    provider credentials the throwaway agents must not be able to spend.
 # ---------------------------------------------------------------------------
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/agent-tree-demo.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/agent-tree-sidebar-e2e.XXXXXX")
 export HOME="$TMP/home"
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
 export XDG_DATA_HOME="$TMP/data"
 export XDG_RUNTIME_DIR="$TMP/run"
 export HERDR_SOCKET_PATH="$TMP/config/herdr/herdr.sock"
-# Do not inherit the outer Herdr identity; the demo talks only to the isolated socket.
+# Do not inherit the outer Herdr identity; the test talks only to the isolated socket.
 unset HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_SESSION HERDR_ENV \
       HERDR_PLUGIN_ID HERDR_PLUGIN_ROOT HERDR_PLUGIN_CONFIG_DIR \
       HERDR_PLUGIN_STATE_DIR HERDR_PLUGIN_EVENT HERDR_INTEGRATION_ID
@@ -162,7 +106,7 @@ for var in $CREDENTIAL_VARS; do
     unset "$var" 2>/dev/null || true
 done
 
-# The isolated TUI reads this config; fixed sidebar width keeps --print stable.
+# The isolated TUI reads this config; a fixed sidebar width keeps the render stable.
 cat > "$XDG_CONFIG_HOME/herdr/config.toml" <<'CFG'
 [server]
 headless_cols = 200
@@ -177,9 +121,6 @@ sidebar_min_width = 32
 sidebar_max_width = 32
 
 # One line per agent: status, tree decoration, then the agent's terminal title.
-# Pi titles every agent, and the title starts with the agent's own name, so the
-# row identifies the Worker/Subagent; a two-row layout makes the tree harder to
-# read.
 [ui.sidebar.agents]
 rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
 CFG
@@ -188,19 +129,14 @@ SERVER_PID=""
 TMUX_SOCKET=""
 
 cleanup() {
-    if [ "$KEEP" = 1 ]; then
-        return 0
-    fi
     if [ -n "$TMUX_SOCKET" ]; then
         tmux -S "$TMUX_SOCKET" kill-server >/dev/null 2>&1 || true
     fi
     if [ -n "$TMP" ] && [ -d "$TMP" ]; then
-        step "Stopping the isolated Herdr server"
         herdr server stop >/dev/null 2>&1 || true
         if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
             kill "$SERVER_PID" 2>/dev/null || true
         fi
-        step "Removing $TMP"
         rm -rf "$TMP"
     fi
 }
@@ -231,7 +167,7 @@ log "Linking the agent-tree plugin into the isolated registry"
 herdr plugin link "$PLUGIN_DIR" --enabled >/dev/null
 
 # ---------------------------------------------------------------------------
-# 4. Fixture. Real Pi agents give genuine agent_session values; the demo derives the
+# 4. Fixture. Real Pi agents give genuine agent_session values; the test derives the
 #    relationship tokens from those real session paths and lets the plugin validate them.
 # ---------------------------------------------------------------------------
 self_hash() {
@@ -239,8 +175,7 @@ self_hash() {
 }
 
 mkws() {
-    # Give every agent its own cwd so Pi titles itself `π - <name>`, as live sessions and
-    # worktrees do. A shared cwd would title every row `π - work` and hide the name.
+    # Give every agent its own cwd so Pi titles itself `π - <name>`, as live sessions do.
     mkdir -p "$TMP/work/$1"
     herdr workspace create --cwd "$TMP/work/$1" --label "$1" --no-focus \
         --env "PATH=$PI_DIR:$PATH" | jq -r '.result.root_pane.pane_id'
@@ -333,7 +268,7 @@ step "codex-1 (reported non-Pi agent, ${SECONDS-t0}s)"
 make_pi root-alpha;   P_R1=$GP_PANE; S_R1=$GP_SESSION; step "root-alpha   (${SECONDS-t0}s)"
 make_pi worker-alpha; P_W1=$GP_PANE; S_W1=$GP_SESSION; step "worker-alpha (${SECONDS-t0}s)"
 H_R1=$(self_hash "$S_R1"); H_W1=$(self_hash "$S_W1")
-report_rel "$P_W1" worker "$H_W1" "$H_R1" "task_id=task-demo" "handoff=reported"
+report_rel "$P_W1" worker "$H_W1" "$H_R1" "task_id=task-e2e" "handoff=reported"
 
 make_pi sub-alpha; P_S1=$GP_PANE; S_S1=$GP_SESSION; step "sub-alpha    (${SECONDS-t0}s)"
 H_S1=$(self_hash "$S_S1")
@@ -383,8 +318,7 @@ done
 step "Undelegating Pi rows and the non-Pi row stayed unranked"
 
 # Tamper proof: forge a ranked leaf Subagent's agency_self and watch the plugin recompute
-# and drop it, then restore the true value and watch the rank return. This is the evidence
-# that the tree comes from real validation rather than published labels.
+# and drop it, then restore the true value and watch the rank return.
 log "Tamper check: a forged agency_self must be rejected by recomputation"
 herdr pane report-metadata "$P_S1" --source pi-fixture \
     --token "agency_self=$(printf '0%.0s' {1..64})" >/dev/null
@@ -401,48 +335,22 @@ wait_ranked 5 || fail "restoring the true agency_self did not restore the tree"
 step "True agency_self restored the Subagent rank"
 
 # ---------------------------------------------------------------------------
-# 6. Show the result.
+# 6. Render the sidebar through a real tmux PTY and assert the tree.
 # ---------------------------------------------------------------------------
-render_sidebar() {
-    TMUX_SOCKET="$TMP/tmux.sock"
-    rm -f "$TMUX_SOCKET"
-    tmux -S "$TMUX_SOCKET" new-session -d -x 150 -y 50 -s agent-tree-demo "$HERDR_BIN"
-    sleep 6
-    # Dismiss the isolated client's first-run modal; harmless if it is not shown.
-    tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-demo Escape
-    sleep 1
-    tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-demo Escape
-    sleep 1
-    local text
-    text=$(tmux -S "$TMUX_SOCKET" capture-pane -p -t agent-tree-demo)
-    tmux -S "$TMUX_SOCKET" kill-server >/dev/null 2>&1 || true
-    printf '%s\n' "$text" | grep -qE 'agents +tree' || fail "the rendered sidebar did not show the 'tree' view label"
-    printf '%s\n' "$text" | grep -q '└─W' || fail "the rendered sidebar did not show the Worker row"
-    # Sidebar is fixed at 32 columns; start at its header, crop, drop the border and blanks.
-    printf '%s\n' "$text" | awk '/^ agents/{f=1} f{print}' \
-        | cut -c1-32 | sed 's/[[:space:]]*$//; s/│$//' \
-        | sed '/^[[:space:]]*«[[:space:]]*$/d' \
-        | awk 'NF{line[NR]=$0; last=NR} END{for (i=1;i<=last;i++) print line[i]}'
-}
+log "Rendering the sidebar and asserting the tree"
+TMUX_SOCKET="$TMP/tmux.sock"
+rm -f "$TMUX_SOCKET"
+tmux -S "$TMUX_SOCKET" new-session -d -x 150 -y 50 -s agent-tree-e2e "$HERDR_BIN"
+sleep 6
+# Dismiss the isolated client's first-run modal; harmless if it is not shown.
+tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-e2e Escape
+sleep 1
+tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-e2e Escape
+sleep 1
+text=$(tmux -S "$TMUX_SOCKET" capture-pane -p -t agent-tree-e2e)
+tmux -S "$TMUX_SOCKET" kill-server >/dev/null 2>&1 || true
+printf '%s\n' "$text" | grep -qE 'agents +tree' || fail "the rendered sidebar did not show the 'tree' view label"
+printf '%s\n' "$text" | grep -q '└─W' || fail "the rendered sidebar did not show the Worker row"
+step "Sidebar rendered with the 'tree' view label and a Worker row"
 
-if [ "$MODE" = print ]; then
-    log "Rendered sidebar (non-interactive)"
-    render_sidebar
-    if [ "$KEEP" = 1 ]; then
-        printf '\n--keep: isolated instance left running at %s\n' "$HERDR_SOCKET_PATH"
-    fi
-    exit 0
-fi
-
-if [ "$KEEP" = 1 ]; then
-    log "--keep: isolated instance left running"
-    printf '  socket : %s\n' "$HERDR_SOCKET_PATH"
-    printf '  attach : HOME=%s XDG_CONFIG_HOME=%s XDG_STATE_HOME=%s XDG_DATA_HOME=%s XDG_RUNTIME_DIR=%s HERDR_SOCKET_PATH=%s herdr\n' \
-        "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR" "$HERDR_SOCKET_PATH"
-    printf '  stop   : HOME=%s XDG_CONFIG_HOME=%s HERDR_SOCKET_PATH=%s herdr server stop && rm -rf %s\n' \
-        "$HOME" "$XDG_CONFIG_HOME" "$HERDR_SOCKET_PATH" "$TMP"
-    exit 0
-fi
-
-log "Attaching the isolated Herdr TUI; quit it (prefix+q) to tear the instance down"
-"$HERDR_BIN"
+log "End-to-end sidebar test passed"

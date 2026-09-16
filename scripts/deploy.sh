@@ -2,11 +2,11 @@
 # agent-tree DEVELOPMENT install / uninstall from this checkout, for your REAL Herdr server.
 #
 # This is a development install from a checkout, not the normal user install path. A normal
-# user installs a published release artifact with scripts/install.sh; see README.md.
+# user installs a published release artifact with scripts/release/install.sh; see README.md.
 #
-#   ./install.sh              install and apply
-#   ./install.sh --uninstall  remove and restore config
-#   ./install.sh --status     show what is currently in place
+#   scripts/deploy.sh              install and apply
+#   scripts/deploy.sh --uninstall  remove and restore config
+#   scripts/deploy.sh --status     show what is currently in place
 #
 # Changes it makes, all reversible:
 #   1. builds . as an optimized release binary
@@ -23,7 +23,7 @@
 # to the staged root; no server restart is needed for the move.
 set -euo pipefail
 
-PLUGIN=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PLUGIN=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 REPO="$PLUGIN"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/herdr/config.toml"
 SOCKET="${HERDR_SOCKET_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr/herdr.sock}"
@@ -152,7 +152,7 @@ status)
     if [ "$current" = "$STAGE" ]; then
       step "running from the staged release root"
     elif [ -n "$current" ]; then
-      step "running from $current (a source checkout: run install.sh to move to the stage)"
+      step "running from $current (a source checkout: run scripts/deploy.sh to move to the stage)"
     fi
   else
     step "plugin not registered"
@@ -211,7 +211,7 @@ PY
 
 install)
   say "Installing agent-tree as a development install from this checkout"
-  echo "  This is not the normal user path; see scripts/install.sh and README.md for a release install."
+  echo "  This is not the normal user path; see scripts/release/install.sh and README.md for a release install."
   echo "  This will build a release binary, stage a self-contained plugin root at:"
   echo "    $STAGE"
   echo "  and register that staged root (not this source checkout), then add or update"

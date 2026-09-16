@@ -1,7 +1,7 @@
 #!/bin/sh
 # Source-checkout launcher. Mirrors the repository's existing src/<name> convention:
 # exec the locally built release binary, with an env override for a staged/installed path.
-# A linked source checkout is a development install. ./install.sh stages a
+# A linked source checkout is a development install. scripts/deploy.sh stages a
 # self-contained plugin root (real binary at ./src/agent-tree) under the user data directory,
 # so an installed plugin no longer depends on this checkout or on target/ surviving.
 set -eu

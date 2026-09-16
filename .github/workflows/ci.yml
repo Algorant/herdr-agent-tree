@@ -24,11 +24,13 @@ jobs:
         run: rustup toolchain install 1.81.0 --profile minimal --component rustfmt,clippy
       - name: Build locked source
         run: cargo +1.81.0 build --locked
-      - name: Run format, Clippy, test, build, installer, and release-structure gates
-        run: make CARGO='cargo +1.81.0' ci
+      - name: Run the hermetic quality gate (format, Clippy, tests, build, shell and release suites)
+        env:
+          CARGO: cargo +1.81.0
+        run: scripts/check.sh --no-e2e
       - name: Confirm final publication remains owner-gated
         run: |
-          if make CARGO='cargo +1.81.0' release-check >release-check.out 2>release-check.err; then
+          if scripts/release/check-targets.sh >release-check.out 2>release-check.err; then
             echo 'release-check unexpectedly passed without an owner-promoted target' >&2
             exit 1
           fi
@@ -52,14 +54,14 @@ jobs:
           export SOURCE_DATE_EPOCH
           version=$(awk -F '"' '$1 ~ /^[[:space:]]*version[[:space:]]*=/ { print $2; exit }' herdr-plugin.toml)
           CARGO_TARGET_DIR=target/build-one cargo +1.81.0 build --locked --release --target '${{ matrix.target }}' --bins
-          scripts/package-release.sh --target '${{ matrix.target }}' --binary-dir 'target/build-one/${{ matrix.target }}/release' --output target/assets-one
+          scripts/release/package.sh --target '${{ matrix.target }}' --binary-dir 'target/build-one/${{ matrix.target }}/release' --output target/assets-one
           CARGO_TARGET_DIR=target/build-two cargo +1.81.0 build --locked --release --target '${{ matrix.target }}' --bins
-          scripts/package-release.sh --target '${{ matrix.target }}' --binary-dir 'target/build-two/${{ matrix.target }}/release' --output target/assets-two
+          scripts/release/package.sh --target '${{ matrix.target }}' --binary-dir 'target/build-two/${{ matrix.target }}/release' --output target/assets-two
           archive="target/assets-one/agent-tree-v$version-${{ matrix.target }}.tar.gz"
           cmp "$archive" "target/assets-two/agent-tree-v$version-${{ matrix.target }}.tar.gz"
-          test/install-candidate.sh "$archive" '${{ matrix.target }}' "target/install-${{ matrix.target }}"
+          tests/shell/install-candidate.sh "$archive" '${{ matrix.target }}' "target/install-${{ matrix.target }}"
       - name: Assert candidate ELF machine and static linkage
-        run: scripts/check-target-binaries.sh --target '${{ matrix.target }}' --binary-dir 'target/build-two/${{ matrix.target }}/release'
+        run: scripts/release/check-binaries.sh --target '${{ matrix.target }}' --binary-dir 'target/build-two/${{ matrix.target }}/release'
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
           name: candidate-${{ matrix.target }}

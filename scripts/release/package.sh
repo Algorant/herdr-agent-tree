@@ -3,7 +3,7 @@
 set -eu
 
 PROGRAM=${0##*/}
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 source=$ROOT
 mode=candidate
 target=
@@ -14,7 +14,7 @@ epoch=${SOURCE_DATE_EPOCH:-}
 
 fail() { printf '%s: %s\n' "$PROGRAM" "$*" >&2; exit 1; }
 usage() {
-    printf '%s\n' 'usage: scripts/package-release.sh --target T --binary-dir DIR [--output DIR] [--source DIR] [--mode candidate|final] [--promotion FILE]' >&2
+    printf '%s\n' 'usage: scripts/release/package.sh --target T --binary-dir DIR [--output DIR] [--source DIR] [--mode candidate|final] [--promotion FILE]' >&2
     exit 2
 }
 while [ "$#" -gt 0 ]; do
@@ -56,8 +56,8 @@ for path in herdr-plugin.toml Cargo.toml README.md CHANGELOG.md LICENSE; do
 done
 
 if [ "$mode" = final ]; then
-    [ -n "$promotion" ] || promotion=$source/release-targets.txt
-    "$ROOT/scripts/check-release-targets.sh" --root "$source" --manifest "$promotion" --target "$target" >/dev/null
+    [ -n "$promotion" ] || promotion=$source/release/targets.txt
+    "$ROOT/scripts/release/check-targets.sh" --root "$source" --manifest "$promotion" --target "$target" >/dev/null
     [ "${GITHUB_EVENT_NAME:-}" = push ] || fail 'final mode requires an owner-triggered GitHub push event'
     [ "${GITHUB_REF:-}" = "refs/tags/v$version" ] || fail "final mode requires exact tag refs/tags/v$version"
 fi
@@ -69,7 +69,7 @@ case $epoch in ''|*[!0-9]*) fail 'SOURCE_DATE_EPOCH must be a non-negative integ
 # GNU tar rejects values beyond its date parser range. Check it before staging.
 date -u -d "@$epoch" +%s >/dev/null 2>&1 || fail 'SOURCE_DATE_EPOCH is outside the supported range'
 
-"$ROOT/scripts/check-target-binaries.sh" --target "$target" --binary-dir "$binary_dir" >/dev/null
+"$ROOT/scripts/release/check-binaries.sh" --target "$target" --binary-dir "$binary_dir" >/dev/null
 
 mkdir -p "$output"
 output=$(CDPATH= cd -- "$output" && pwd -P)

@@ -2,8 +2,8 @@
 # Hermetic installer and local-stage acceptance tests. No real Herdr or user path is used.
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-INSTALL=$ROOT/scripts/install.sh
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+INSTALL=$ROOT/scripts/release/install.sh
 STAGE=$ROOT/scripts/stage-local.sh
 SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/agent-tree-tests.XXXXXX")
 trap 'rm -rf -- "$SANDBOX"' EXIT HUP INT TERM

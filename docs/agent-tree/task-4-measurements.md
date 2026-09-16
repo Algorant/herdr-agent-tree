@@ -6,18 +6,18 @@ trade that justifies that decision and the raw renders behind it.
 
 ## Scope and isolation
 
-- Measured in the demo's isolated Herdr instance (own `HOME`, XDG dirs and explicit socket;
-  the active server at `/home/ivan/.config/herdr/herdr.sock` was never contacted),
-  Herdr 0.9.0, protocol 22.
-- Fixture: the `demo.sh` delegation family — 7 credential-free idle Pi agents plus the
-  synthetic `codex` row — with relationship tokens published as `pi-agency` publishes them,
+- Measured in the `tests/e2e/sidebar.sh` isolated Herdr instance (own `HOME`, XDG dirs and
+  explicit socket; the active server at `/home/ivan/.config/herdr/herdr.sock` was never
+  contacted), Herdr 0.9.0, protocol 22.
+- Fixture: the `tests/e2e/sidebar.sh` delegation family — 7 credential-free idle Pi agents plus
+  the synthetic `codex` row — with relationship tokens published as `pi-agency` publishes them,
   and the plugin's `tree` projection applied.
-- Method: the kept isolated instance from `./demo.sh --print --keep`; the isolated
-  `config.toml` was rewritten (all three sidebar widths pinned to the measured column count)
-  and applied with `herdr server reload-config`; the sidebar was rendered through the demo's
-  tmux PTY helper and cropped to the configured width. Every rewritten config passed
-  `herdr config check` (the one invalid variant is called out below).
-- Widths: 18 (Herdr's `sidebar_min_width`), 26 (default `sidebar_width`), 32 (the demo's
+- Method: an isolated Herdr 0.9.0 instance on the same fixture; the isolated `config.toml` was
+  rewritten (all three sidebar widths pinned to the measured column count) and applied with
+  `herdr server reload-config`; the sidebar was rendered through a tmux PTY helper and cropped
+  to the configured width. Every rewritten config passed `herdr config check` (the one invalid
+  variant is called out below).
+- Widths: 18 (Herdr's `sidebar_min_width`), 26 (default `sidebar_width`), 32 (the test's
   pinned width), 36 (`sidebar_max_width`).
 - In the transcripts below a leading `|` marks the first column and a trailing `|` marks the
   configured width, so clipping is visible.
@@ -29,14 +29,14 @@ trade that justifies that decision and the raw renders behind it.
 | agent | `terminal_title` | `agent_tree_row` | role | task_id | handoff | rank |
 | ----- | ---------------- | ---------------- | ---- | ------- | ------- | ---- |
 | root-alpha | `π - root-alpha` | (none) | – | – | – | 000001 |
-| worker-alpha | `π - worker-alpha` | `└─W task-demo ▸` (15 chars) | worker | task-demo | reported | 000002 |
+| worker-alpha | `π - worker-alpha` | `└─W task-e2e ▸` (14 chars) | worker | task-e2e | reported | 000002 |
 | sub-alpha | `π - sub-alpha` | `│  └─S ?` (8 chars) | subagent | – | – | 000003 |
 | root-beta | `π - root-beta` | (none) | – | – | – | 000004 |
 | sub-beta | `π - sub-beta` | `└─S` | subagent | – | – | 000005 |
 | lone-1, lone-2 | `π - lone-1`, `π - lone-2` | (none) | – | – | – | – |
 | codex (synthetic) | (none) | (none) | – | – | – | – |
 
-The Worker decoration is 15 characters — inside the documented 20-character cap and the C4
+The Worker decoration is 14 characters — inside the documented 20-character cap and the C4
 grammar (`indent branch role [task] [attention]`). The clipping below is Herdr's row-cell
 allocation, not a token overrun.
 
@@ -77,7 +77,7 @@ allocation, not a token overrun.
 ```
  agents                    tree
  ○ π - root-alpha
- ○ └─W task-dem… · π - worker-…
+ ○ └─W task-e2e… · π - worker-…
  ○ │  └─S ? · π - sub-alpha
  ○ π - root-beta
  ○ └─S · π - sub-beta
@@ -91,7 +91,7 @@ allocation, not a token overrun.
 ```
  agents                        tree
  ○ π - root-alpha
- ○ └─W task-demo ▸ · π - worker-al…
+ ○ └─W task-e2e ▸ · π - worker-al…
  ○ │  └─S ? · π - sub-alpha
  ○ π - root-beta
  ○ └─S · π - sub-beta
@@ -104,12 +104,12 @@ allocation, not a token overrun.
 
 - A root row has no decoration and its title fits (`π - root-alpha`, 14 chars) at every
   measured width, including 18.
-- The Worker row overflows in both cells. The decoration loses the attention glyph and part
-  of the task id first: `└─W task-demo ▸` → `└─W task-dem…` (32) → `└─W task-…` (26) →
-  `└─W t…` (18). The title clips to `π - worker-…` (32), `π - work…` (26), `π - …` (18).
-- The `task-…` fragment identifies the Worker at 26 and 32 (`task-…`, `task-dem…`), matching
+- The Worker row overflows in both cells. The decoration loses the attention glyph first:
+  `└─W task-e2e ▸` → `└─W task-e2e…` (32) → `└─W task-…` (26) → `└─W t…` (18). The title clips
+  to `π - worker-…` (32), `π - work…` (26), `π - …` (18).
+- The `task-e2e` fragment identifies the Worker at 26 and 32 (`task-…`, `task-e2e…`), matching
   the live row (`└─W task-… · π - work…`) recorded in the task; at 18 only `t…` remains. At 36
-  the full 15-character decoration, attention glyph included, is visible and only the title
+  the full 14-character decoration, attention glyph included, is visible and only the title
   clips.
 - Nesting stays readable from 26 up: `└─W`, `│  └─S`, `└─S` all survive. At 18 the depth-2
   Subagent decoration clamps to `│  └─…`, losing the `S` role and `?` attention; the branch

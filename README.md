@@ -11,8 +11,9 @@ never touches panes it cannot validate.
 Status: MVP. Rendering, ordering, identity validation and lifecycle were observed in an
 isolated Herdr 0.9.0 server (see "Verified behavior" below). The plugin has also been
 installed and enabled on Algorant's live Herdr server since 2026-09-15, from the staged
-release root that `install.sh` produces; the toggle and the tree were verified there.
-`./demo.sh` runs it on a real fixture in a throwaway instance with one command (see "Demo").
+release root that `scripts/deploy.sh` produces; the toggle and the tree were verified there.
+`tests/e2e/sidebar.sh` exercises it on a real fixture in a throwaway instance (see
+"End-to-end test").
 
 ## How it works
 
@@ -34,64 +35,65 @@ release root that `install.sh` produces; the toggle and the tree were verified t
 
 - Herdr 0.9.0 (protocol 22). `min_herdr_version = "0.9.0"`.
 - Rust toolchain (built with 1.81+).
+- `just` for the developer recipes (`just test`, `just build`, `just deploy`).
 
 ## Build
 
 ```sh
-cargo build --locked --release --manifest-path Cargo.toml
+just build
+# equivalent to: cargo build --locked --release --manifest-path Cargo.toml
 ```
 
 The manifest runs `./src/agent-tree`, a launcher that execs the optimized release binary
 `target/release/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
-Linking this source checkout directly, or running `./install.sh`, is a development install from
-a checkout. The supported path for a normal user is a release install (see "Install" below).
+Linking this source checkout directly, or running `scripts/deploy.sh`, is a development install
+from a checkout. The supported path for a normal user is a release install (see "Install" below).
 
 ## Test
 
 ```sh
-cargo test --locked
+just test
 ```
 
-The suite runs against the plugin's own logic with Rust's standard test harness and needs no
-running Herdr server, no socket and no network. It covers identity recomputation and
-self-validation, unique parent resolution and the tokenless-parent refinement, every
-contract C5 degenerate case, preorder emission with family contiguity and native ordering,
-the rank format and its ceiling, the decoration grammar and 20-character cap, the paused
-flag, and the CLI boundary where `apply` clears the paused flag while `clear` leaves it.
-`demo.sh` remains the end-to-end path for live Herdr behaviour.
+`scripts/check.sh` is the single authoritative gate: formatting, Clippy, Rust tests, the locked
+build, shell syntax checks, the installer and release suites, and the noninteractive isolated
+Herdr end-to-end test below. The Rust suite runs against the plugin's own logic with Rust's
+standard test harness and needs no running Herdr server, no socket and no network. It covers
+identity recomputation and self-validation, unique parent resolution and the tokenless-parent
+refinement, every contract C5 degenerate case, preorder emission with family contiguity and
+native ordering, the rank format and its ceiling, the decoration grammar and 20-character cap,
+the paused flag, and the CLI boundary where `apply` clears the paused flag while `clear` leaves
+it. Hosted CI runs `scripts/check.sh --no-e2e` because its runner has no Herdr or Pi.
 
-## Demo (one command)
+## End-to-end test
 
 ```sh
-./demo.sh            # attach an isolated TUI and look at the sidebar
-./demo.sh --print    # print the rendered sidebar as text (needs tmux)
-./demo.sh --keep     # leave the isolated instance running on exit
+tests/e2e/sidebar.sh   # also run by `just test`
 ```
 
-The demo builds the plugin, creates a fully isolated Herdr instance under a temp directory,
-and shows the plugin working on a real delegation family: a root, a Worker beneath it, a
-Worker-owned Subagent beneath that Worker, a second root with its Subagent, two undelegating
-Pi sessions and a non-Pi row. It never touches the active Herdr server, its socket or
-`~/.config/herdr`, and never registers the plugin in a user-global registry.
+The test builds the plugin, creates a fully isolated Herdr instance under a temp directory, and
+drives the plugin on a real delegation family: a root, a Worker beneath it, a Worker-owned
+Subagent beneath that Worker, a second root with its Subagent, two undelegating Pi sessions and
+a non-Pi row. It is noninteractive, has no options, never touches the active Herdr server, its
+socket or `~/.config/herdr`, and removes the temp directory and isolated server on exit,
+including on failure or interrupt.
 
 What it does, in order:
 
-- Preflights `herdr`, `cargo`, `jq`, `sha256sum` and `setsid` (plus `tmux` for `--print`), and
-  announces the resource cost before doing any of it.
-- Starts an isolated Herdr with its own `HOME`, XDG dirs and explicit socket, and verifies
-  the resolved socket at runtime, aborting if it is not the isolated one.
+- Preflights `herdr`, `cargo`, `jq`, `sha256sum`, `setsid` and `tmux`.
+- Starts an isolated Herdr with its own `HOME`, XDG dirs and explicit socket, and verifies the
+  resolved socket at runtime, aborting if it is not the isolated one.
 - Installs the Pi publisher into the isolated HOME and launches **7 credential-free, idle Pi
-  agents**. Provider credential variables are cleared explicitly, then two independent
-  signals fail the demo closed before any further agent starts: the launched process
-  environment contains no provider key, and Pi reports `No models available`. It never
-  prompts an agent and cannot spend credits. Expect about 25 s and 1 GB RAM.
+  agents**. Provider credential variables are cleared explicitly, then two independent signals
+  fail the test closed before any further agent starts: the launched process environment
+  contains no provider key, and Pi reports `No models available`. It never prompts an agent and
+  cannot spend credits. Expect about 25 s and 1 GB RAM.
 - Publishes the pi-agency-shaped relationship tokens (`role`, `agency_self`, `agency_parent`,
   `task_id`, `handoff`, `question`) derived from those real session paths. It never writes
   `agent_tree_row` or `agent_tree_rank`; the plugin computes those itself.
-- Applies the plugin, verifies the ranks, then forges a Subagent's `agency_self` and shows the
-  plugin recompute and drop it before restoring the true value and the rank.
-- Stops the isolated server and removes the temp directory on exit, including on failure or
-  interrupt. `--keep` leaves the instance running and prints the attach and stop commands.
+- Applies the plugin, asserts the rank order, then forges a Subagent's `agency_self` and asserts
+  the plugin recomputes and drops it before restoring the true value and the rank.
+- Renders the sidebar through a real tmux PTY and asserts the `tree` view label and a Worker row.
 
 What the fixture proves and does not prove:
 
@@ -99,7 +101,7 @@ What the fixture proves and does not prove:
   `kind: path`).
 - Genuine: the tree is produced by the plugin's own identity validation. The forged-hash step
   shows it recomputes rather than trusting published labels.
-- Fixture: the relationship tokens are published by the demo, not by pi-agency, because the
+- Fixture: the relationship tokens are published by the test, not by pi-agency, because the
   throwaway HOME has no pi-agency and no Tandem. They use the same names and values pi-agency
   publishes, derived from the real session paths.
 - Fixture: the non-Pi row is a reported agent row (`codex`), not a launched Codex process.
@@ -110,13 +112,6 @@ External `pane.report_agent_session` / `pane.report_agent` cannot populate `agen
 tested from an external connection with plain and `herdr:` sources, with and without
 `agent_session_path`, before and after an agent row existed, and `agent_session` stays absent.
 The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` section 11.
-
-### Running from inside Herdr
-
-The default (attach) mode starts the isolated TUI in your current terminal. If you run the
-demo from inside an existing Herdr pane, the nested client can hit the layout quirk from M1
-section 3.5 and the sidebar may render at an odd size. `--print` runs the client through a
-real tmux PTY instead and is the reliable path from inside Herdr (or in CI and pipes).
 
 ## Install
 
@@ -139,7 +134,7 @@ version=0.1.0
 target=x86_64-unknown-linux-musl   # or aarch64-unknown-linux-musl
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output install-agent-tree.sh \
-  "https://raw.githubusercontent.com/Algorant/herdr-agent-tree/v$version/scripts/install.sh"
+  "https://raw.githubusercontent.com/Algorant/herdr-agent-tree/v$version/scripts/release/install.sh"
 less install-agent-tree.sh
 ```
 
@@ -197,16 +192,16 @@ does this when Herdr is found) and remove the old one when you are satisfied. Th
 
 ### Development install from a checkout
 
-`./install.sh` at the repository root is a **development install** from this checkout. It
-builds the release binary, stages a self-contained plugin root at
+`just deploy` (which runs `scripts/deploy.sh`) is the **development install** from this
+checkout. It builds the release binary, stages a self-contained plugin root at
 `${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/stage`, registers **that staged root**
 (not this checkout), adds or updates the sidebar rows block in `config.toml`, applies the
-projection and reloads the config:
+projection and reloads the config. It is the sole rapid checkout dogfood loop:
 
 ```sh
-./install.sh              # build, stage, register, configure and apply
-./install.sh --status     # show what is in place
-./install.sh --uninstall  # reverse registration and the config block
+just deploy               # build, stage, register, configure and apply
+scripts/deploy.sh --status     # show what is in place
+scripts/deploy.sh --uninstall  # reverse registration and the config block
 ```
 
 The staged layout follows the `herdr-notifs-plus` development staging approach: a complete
@@ -221,11 +216,11 @@ plugin root whose `src/<name>` is the real binary rather than a launcher.
 
 Because the staged `src/agent-tree` is the release binary, the staged plugin depends on neither
 the repository checkout nor `target/`: `cargo clean`, a `target/` wipe, or moving the checkout
-does not affect it. Re-run `./install.sh` to rebuild and restage. The staging directory is
+does not affect it. Re-run `just deploy` to rebuild and restage. The staging directory is
 local hidden state, so this is not the documented path for a normal user.
 
 An install made earlier with `herdr plugin link <repo>/. --enabled` registered the source
-checkout; running `./install.sh` relinks it to the staged root with no server restart.
+checkout; running `just deploy` relinks it to the staged root with no server restart.
 Registering the checkout by hand also remains available for development:
 
 ```sh
@@ -284,7 +279,7 @@ installs this binding for you.
 ## Agents row configuration (verified fragment)
 
 Herdr renders rows from `ui.sidebar.agents.rows`. This plugin's decoration only appears if
-the row template references `$agent_tree_row`. `install.sh` appends this exact fragment, and
+the row template references `$agent_tree_row`. `scripts/deploy.sh` appends this exact fragment, and
 updates it on re-install if the managed block already exists (default cells keep the existing
 theme; no theme colours are redefined):
 
@@ -293,14 +288,14 @@ theme; no theme colours are redefined):
 rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
 ```
 
-Rendered example from `demo.sh --print` at its fixed 32-column sidebar (`tree` is the
+Rendered example from `tests/e2e/sidebar.sh` at its fixed 32-column sidebar (`tree` is the
 projection label shown in the sidebar header):
 
 ```
  agents                    tree
 
  ○ π - root-alpha
- ○ └─W task-dem… · π - worker-…
+ ○ └─W task-e2e… · π - worker-…
  ○ │  └─S ? · π - sub-alpha
  ○ π - root-beta
  ○ └─S · π - sub-beta
@@ -309,7 +304,7 @@ projection label shown in the sidebar header):
  ○
 ```
 
-The last row is the demo's synthetic non-Pi agent, which has no terminal title; the plugin
+The last row is the test's synthetic non-Pi agent, which has no terminal title; the plugin
 never decorates non-Pi rows, and this configuration does not identify them.
 
 The rank token is deliberately **not** rendered; it exists only for ordering.
@@ -317,20 +312,20 @@ The rank token is deliberately **not** rendered; it exists only for ordering.
 ### Measured at real sidebar widths (task-4)
 
 The same fixture was measured in the isolated instance at Herdr's `sidebar_min_width` (18),
-default `sidebar_width` (26), the demo's pinned 32, and `sidebar_max_width` (36). A root title
+default `sidebar_width` (26), the test's pinned 32, and `sidebar_max_width` (36). A root title
 fits at every width. A Worker clips in both cells: at 26 and 32 the clipped task id
-(`task-…`, `task-dem…`) still identifies the Worker, while at 18 only `└─W t…` remains and the
+(`task-…`, `task-e2e…`) still identifies the Worker, while at 18 only `└─W t…` remains and the
 title is `π - …`. Nesting glyphs stay readable from 26 up, and at 18 the depth-2 role letter
 clips while the branch glyphs remain:
 
 ```
  18  ○ └─W t… · π - …
  26  ○ └─W task-… · π - work…
- 32  ○ └─W task-dem… · π - worker-…
- 36  ○ └─W task-demo ▸ · π - worker-al…
+ 32  ○ └─W task-e2e… · π - worker-…
+ 36  ○ └─W task-e2e ▸ · π - worker-al…
 ```
 
-At 36 the full 15-character decoration, including the `▸` attention glyph, is visible and only
+At 36 the full 14-character decoration, including the `▸` attention glyph, is visible and only
 the title clips. `rows_by_agent` cannot shorten a Worker specifically: it keys on canonical
 agent IDs, so every Pi root, Worker and Subagent matches `pi`, and a `worker` key is rejected
 by `herdr config check` (`unknown canonical agent id`). The measured alternatives and raw
@@ -383,7 +378,7 @@ Optional styling with existing palette values (not verified in this session):
 
 Rollback of the fragment: delete the `[ui.sidebar.agents]` block (or restore the rows value
 you had before). Herdr's defaults apply underneath; the plugin runtime writes no
-configuration, and `install.sh` only manages the marked block above.
+configuration, and `scripts/deploy.sh` only manages the marked block above.
 
 ## Rollback
 
@@ -448,9 +443,9 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
    conflict was a stated prerequisite for the live enable; the plugin has since been enabled
    live (2026-09-15), so it remains a caveat to watch rather than an open gate.
 6. **Identity clips at real sidebar widths (task-4).** The single-row configuration is
-   retained after measuring it at 18, 26, 32 and 36 columns. A Worker carries a 15-character
+   retained after measuring it at 18, 26, 32 and 36 columns. A Worker carries a 14-character
    decoration and a long title, so at 26 and 32 both cells clip (`└─W task-… · π - work…` and
-   `└─W task-dem… · π - worker-…`) and the clipped task id still identifies the Worker; at 18
+   `└─W task-e2e… · π - worker-…`) and the clipped task id still identifies the Worker; at 18
    only `└─W t… · π - …` remains, so identity is weak there though the nesting glyphs are
    intact. Nesting glyphs stay readable from 26 up, and at 18 the depth-2 role letter clips
    (`│  └─…`).
@@ -460,7 +455,7 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
    canonical agent IDs, so all Pi agents share `pi` and a `worker` key is rejected by
    `herdr config check`. Raw renders: `docs/agent-tree/task-4-measurements.md`.
 7. **An agent with no terminal title renders an empty identity cell (task-4).** The identity
-   cell is `terminal_title_stripped`, so a non-Pi agent (the demo's synthetic `codex` row)
+   cell is `terminal_title_stripped`, so a non-Pi agent (the test's synthetic `codex` row)
    and any agent that never sets a title leave it blank; the plugin never decorates non-Pi
    rows, so it cannot fill that cell. The measured fix — adding the `agent` cell — shows
    `codex`, but it splits the row further, clipping the Worker decoration to `└─W t…` and the

@@ -17,7 +17,7 @@ fail() {
 
 usage() {
     cat >&2 <<'USAGE'
-usage: scripts/install.sh --version V --checksum SHA256 [--target T]
+usage: scripts/release/install.sh --version V --checksum SHA256 [--target T]
                           [--prefix DIR] [--herdr PATH] [--no-link]
 USAGE
     exit 2

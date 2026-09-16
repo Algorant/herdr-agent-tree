@@ -8,11 +8,11 @@ owner target allowlist is empty.
 ## Version gate
 
 `herdr-plugin.toml` and `Cargo.toml` must carry the same three-component version, and
-`CHANGELOG.md` must have the exact heading `## [<version>] - planned`. `scripts/check-release.sh`
+`CHANGELOG.md` must have the exact heading `## [<version>] - planned`. `scripts/release/check-release.sh`
 enforces all three and, when run for a tag, requires the exact `refs/tags/v<version>` ref.
 
 ```sh
-./scripts/check-release.sh
+./scripts/release/check-release.sh
 ```
 
 ## Supported targets
@@ -27,12 +27,12 @@ unpinned cross compiler is downloaded. The plugin manifest is `platforms = ["lin
 
 ## Packaging
 
-`scripts/package-release.sh` builds one deterministic archive and its `.sha256` sidecar for a
+`scripts/release/package.sh` builds one deterministic archive and its `.sha256` sidecar for a
 target from an already-built binary directory:
 
 ```sh
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) \
-  ./scripts/package-release.sh --target x86_64-unknown-linux-musl \
+  ./scripts/release/package.sh --target x86_64-unknown-linux-musl \
   --binary-dir target/x86_64-unknown-linux-musl/release
 ```
 
@@ -49,13 +49,13 @@ agent-tree-v<version>-<target>/
 ```
 
 Ownership is `0/0`, member names are sorted, modes are exact, and the mtime is pinned to
-`SOURCE_DATE_EPOCH`, so two clean builds are byte-identical. `scripts/check-target-binaries.sh`
+`SOURCE_DATE_EPOCH`, so two clean builds are byte-identical. `scripts/release/check-binaries.sh`
 rejects a binary whose ELF machine is not the target's or which has any `NEEDED` entry.
-`scripts/write-checksums.sh` writes the aggregate `agent-tree-v<version>-SHA256SUMS` file.
+`scripts/release/checksums.sh` writes the aggregate `agent-tree-v<version>-SHA256SUMS` file.
 
 ## Installer
 
-`scripts/install.sh` installs one caller-pinned release without elevated privileges:
+`scripts/release/install.sh` installs one caller-pinned release without elevated privileges:
 
 1. Downloads `https://github.com/Algorant/herdr-agent-tree/releases/download/v<version>/agent-tree-v<version>-<target>.tar.gz`
    with `curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2`.
@@ -75,7 +75,7 @@ See "Install" in `README.md` for the user-facing commands and the manual activat
 
 `scripts/stage-local.sh` writes a complete plugin root under the Cargo target directory
 (`target/stage-local` by default) from a debug or release binary. It never links the result or
-touches user state. The root `./install.sh` is the development install from a checkout; it is
+touches user state. `scripts/deploy.sh` is the development install from a checkout; it is
 not the normal user path.
 
 ## CI
@@ -83,28 +83,30 @@ not the normal user path.
 `.github/workflows/ci.yml` runs on pushes and pull requests with a pinned Rust 1.81.0
 toolchain:
 
-- `cargo build --locked` as an explicit build step, then `make ci`:
+- `cargo build --locked` as an explicit build step, then `scripts/check.sh --no-e2e`:
   `cargo fmt --check`, `cargo clippy --locked --all-targets --all-features -- -D warnings`,
-  `cargo test --locked --all-targets`, `cargo build --locked`, `sh -n` over the shell scripts,
-  and the hermetic installer and release suites.
-- A step that runs `make release-check` and fails the job unless the owner gate stays closed.
+  `cargo test --locked --all-targets`, `cargo build --locked`, shell syntax checks, and the
+  hermetic installer and release suites. Hosted CI skips only the Herdr/Pi end-to-end test,
+  which `just test` runs locally.
+- A step that runs `scripts/release/check-targets.sh` and fails the job unless the owner gate
+  stays closed.
 - A candidate matrix that builds both musl targets twice, compares the archives byte for byte,
   runs them through the real installer with a caller-pinned digest, and asserts ELF machine
   and static linkage.
 
 ## Owner-gated final promotion
 
-`release-targets.txt` is the owner-controlled allowlist. Each line is
+`release/targets.txt` is the owner-controlled allowlist. Each line is
 `RUST_TARGET|TRACKED_NATIVE_EVIDENCE_PATH|OWNER_APPROVER`. It is intentionally empty.
 
-`scripts/check-release-targets.sh` refuses to approve anything until a target has a tracked
+`scripts/release/check-targets.sh` refuses to approve anything until a target has a tracked
 `docs/release-evidence/*.md` file with a matching `target`, the current manifest `version`, a
 64-character lowercase `candidate_sha256`, `native_sidebar_evidence: passed` and the matching
 `owner_approved_by`. Aarch64 requires native aarch64 TUI/sidebar evidence; cross-built or
 emulated evidence is insufficient. The promotion manifest must be tracked by Git, and it and every
 evidence file must be in the same reviewed release commit.
 
-`make release-check` fails closed while the allowlist is empty. The tag workflow in
+`scripts/release/check-targets.sh` fails closed while the allowlist is empty. The tag workflow in
 `.github/workflows/release.yml` runs only on a `v*` tag push and would stop at that same gate
 before building or publishing. Nothing in this repository creates a tag, publishes a release,
 or changes repository visibility.

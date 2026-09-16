@@ -32,7 +32,7 @@ jobs:
       - name: Require exact manifest/Cargo/changelog/tag agreement
         id: version
         run: |
-          scripts/check-release.sh --ref "$GITHUB_REF"
+          scripts/release/check-release.sh --ref "$GITHUB_REF"
           version=$(awk -F '"' '$1 ~ /^[[:space:]]*version[[:space:]]*=/ { print $2; exit }' herdr-plugin.toml)
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Require a committed project LICENSE
@@ -40,10 +40,10 @@ jobs:
       - name: Require owner-approved targets with tracked native evidence
         id: targets
         run: |
-          git ls-files --error-unmatch release-targets.txt >/dev/null
-          scripts/check-release-targets.sh >approved-targets.txt
+          git ls-files --error-unmatch release/targets.txt >/dev/null
+          scripts/release/check-targets.sh >approved-targets.txt
           while IFS= read -r target; do
-            scripts/check-release-targets.sh --target "$target"
+            scripts/release/check-targets.sh --target "$target"
           done <approved-targets.txt
           targets=$(jq -Rsc 'split("\n") | map(select(length > 0))' approved-targets.txt)
           printf 'targets=%s\n' "$targets" >> "$GITHUB_OUTPUT"
@@ -71,10 +71,10 @@ jobs:
       - name: Package owner-gated final asset
         env:
           SOURCE_DATE_EPOCH: ${{ needs.gate.outputs.epoch }}
-        run: scripts/package-release.sh --mode final --promotion release-targets.txt --target '${{ matrix.target }}' --binary-dir 'target/${{ matrix.target }}/release' --output target/release-assets
+        run: scripts/release/package.sh --mode final --promotion release/targets.txt --target '${{ matrix.target }}' --binary-dir 'target/${{ matrix.target }}/release' --output target/release-assets
       - name: Assert final ELF machine, static linkage, and exact archive
         run: |
-          scripts/check-target-binaries.sh --target '${{ matrix.target }}' --binary-dir 'target/${{ matrix.target }}/release'
+          scripts/release/check-binaries.sh --target '${{ matrix.target }}' --binary-dir 'target/${{ matrix.target }}/release'
           tar -tvzf 'target/release-assets/agent-tree-v${{ needs.gate.outputs.version }}-${{ matrix.target }}.tar.gz'
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
@@ -109,10 +109,10 @@ jobs:
           test "$(find target/release-assets -mindepth 1 -maxdepth 1 -type l | wc -l)" -eq 0
           for archive in target/release-assets/*.tar.gz; do
             target=${archive%.tar.gz}; target=${target##*-v${{ needs.gate.outputs.version }}-}
-            scripts/check-release-targets.sh --target "$target"
+            scripts/release/check-targets.sh --target "$target"
           done
-          scripts/write-checksums.sh target/release-assets --targets-file release-targets.txt
-          scripts/check-release.sh --ref "$GITHUB_REF" --assets target/release-assets --targets-file release-targets.txt
+          scripts/release/checksums.sh target/release-assets --targets-file release/targets.txt
+          scripts/release/check-release.sh --ref "$GITHUB_REF" --assets target/release-assets --targets-file release/targets.txt
       - name: Create immutable tag release
         env:
           GH_TOKEN: ${{ github.token }}

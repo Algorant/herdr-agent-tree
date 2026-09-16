@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 PROGRAM=${0##*/}
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 directory=$ROOT/target/release-assets
 targets_file=
 targets_root=$ROOT
@@ -18,7 +18,7 @@ output=$directory/agent-tree-v$version-SHA256SUMS
 work=$(mktemp -d "${TMPDIR:-/tmp}/agent-tree-sums.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
 if [ -n "$targets_file" ]; then
-    "$ROOT/scripts/check-release-targets.sh" --root "$targets_root" --manifest "$targets_file" >"$work/targets"
+    "$ROOT/scripts/release/check-targets.sh" --root "$targets_root" --manifest "$targets_file" >"$work/targets"
 else
     printf '%s\n' aarch64-unknown-linux-musl x86_64-unknown-linux-musl >"$work/targets"
 fi
