@@ -2,14 +2,13 @@
 id: task-9
 type: task
 title: "Simplify the repository around test, build and deploy"
-state: "in-progress"
 priority: "high"
 effort: "medium"
 blockers: ["task-5"]
 relatedFiles: ["Makefile", "justfile", "demo.sh", "install.sh", "release-targets.txt", "release", "scripts", "test", "tests", "docs", "README.md", "CHANGELOG.md", ".github/workflows", "src/agent-tree"]
 tags: ["repository-hygiene", "developer-experience", "just"]
 accord:
-  status: "delivered"
+  status: "accepted"
   acceptance: ["The tracked repository root contains no .sh files, no .txt files and no Makefile; it contains a justfile with exactly test, build and deploy recipes.", "`just test` runs formatting, Clippy, Rust tests, shell installer/release tests and a noninteractive isolated Herdr E2E test that always cleans up.", "`just build` produces the optimized current-checkout agent-tree binary.", "`just deploy` delegates to scripts/deploy.sh as the sole checkout dogfood entry point; task-6 may subsequently strengthen its subscriber replacement behavior.", "The former demo is replaced by tests/e2e/sidebar.sh with no interactive attach, --keep or demo-specific output branches while retaining real identity and sidebar assertions.", "release/targets.txt is the sole owner promotion manifest, tests/shell/ is the sole shell-test location, and all release internals use the organized scripts/release paths.", "README, release documentation, CHANGELOG, workflows, package scripts and source-launcher guidance contain no stale references to Makefile, demo.sh, root install.sh, root release-targets.txt or test/.", "Hosted CI and local commands use the new authoritative paths and preserve the fail-closed publication gate."]
   claimedAt: "2026-09-16T13:31:34Z"
   deliveredAt: "2026-09-16T13:52:21Z"
@@ -22,6 +21,9 @@ accord:
 createdAt: "2026-09-16T13:27:45Z"
 updatedAt: "2026-09-16T13:52:21Z"
 assignee: "worker-task-9-d65e3ac8"
+archivedAt: "2026-09-16T13:52:21Z"
+resolution:
+  outcome: "completed"
 ---
 
 ## Description
