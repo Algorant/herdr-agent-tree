@@ -50,3 +50,18 @@
 {"ts":"2026-09-17T22:01:51Z","event":"decision.created","id":"decision-1","summary":"Allow runtime writes of ui.agent_panel_sort for the agent-mode cycle","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":50}
 {"ts":"2026-09-17T22:01:58Z","event":"task.updated","id":"task-11","summary":"Updated task-11 metadata: references, relatedFiles, blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":51}
 {"ts":"2026-09-17T22:02:17Z","event":"accord.claimed","id":"task-11","summary":"Accord claim for task-11","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":52}
+{"ts":"2026-09-17T22:22:33Z","event":"accord.delivered","id":"task-11","summary":"Accord deliver for task-11","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":53}
+{"ts":"2026-09-17T22:22:33Z","event":"task.completed","id":"task-11","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":54}
+{"ts":"2026-09-17T22:23:02Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":55}
+{"ts":"2026-09-17T22:44:03Z","event":"task.created","id":"task-13","summary":"Rework the agent-mode cycle so tree stays on and the header mouse toggle still works","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":56}
+{"ts":"2026-09-17T22:44:09Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":57}
+{"ts":"2026-09-18T12:42:16Z","event":"accord.claimed","id":"task-13","summary":"Accord claim for task-13","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":58}
+{"ts":"2026-09-18T14:52:50Z","event":"decision.created","id":"decision-2","summary":"Replace the three-mode cycle with an owner-safe Agent Tree toggle","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":59}
+{"ts":"2026-09-18T14:52:58Z","event":"decision.updated","id":"decision-2","summary":"Updated decision-2 metadata: status, decidedAt","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":60}
+{"ts":"2026-09-18T14:53:14Z","event":"task.updated","id":"task-13","summary":"Updated task-13 metadata: title, references, relatedFiles, acceptance, constraints, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":61}
+{"ts":"2026-09-18T15:13:22Z","event":"accord.delivered","id":"task-13","summary":"Accord deliver for task-13","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":62}
+{"ts":"2026-09-18T15:13:23Z","event":"accord.rework","id":"task-13","summary":"Accord rework for task-13","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":63}
+{"ts":"2026-09-18T15:19:31Z","event":"accord.released","id":"task-13","summary":"Accord release for task-13","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":64,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-18T15:19:48Z","event":"accord.claimed","id":"task-13","summary":"Accord claim for task-13","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":65}
+{"ts":"2026-09-18T15:27:37Z","event":"accord.delivered","id":"task-13","summary":"Accord deliver for task-13","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":66}
+{"ts":"2026-09-18T15:27:37Z","event":"accord.rework","id":"task-13","summary":"Accord rework for task-13","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":67}

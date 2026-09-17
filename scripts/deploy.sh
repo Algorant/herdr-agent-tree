@@ -107,7 +107,7 @@ stage_root() {
   # source launcher.
   id=$(awk -F '"' '$1 ~ /^[[:space:]]*id[[:space:]]*=[[:space:]]*$/ { print $2; exit }' "$work/herdr-plugin.toml")
   [ "$id" = agent-tree ] || { rm -rf "$work"; fail "staged manifest has the wrong plugin id: ${id:-<none>}"; }
-  for action in start apply reload clear toggle; do
+  for action in start apply reload clear cycle; do
     grep -Fqx "command = [\"./src/agent-tree\", \"$action\"]" "$work/herdr-plugin.toml" \
       || { rm -rf "$work"; fail "staged manifest is missing the '$action' command"; }
   done
@@ -481,7 +481,7 @@ PY
 
   say "Done (development install)"
   echo "  Running from:            $STAGE"
-  echo "  Toggle the tree off/on:  $HERDR_BIN plugin action invoke agent-tree.toggle"
+  echo "  Cycle grouped/priority/tree: $HERDR_BIN plugin action invoke agent-tree.cycle"
   echo "  Back out at any time:    $0 --uninstall"
   ;;
 esac

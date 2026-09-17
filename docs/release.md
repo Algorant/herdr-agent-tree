@@ -63,7 +63,7 @@ rejects a binary whose ELF machine is not the target's or which has any `NEEDED`
 3. Enforces a strict GNU-tar allowlist: exactly the seven entries above, with their modes, and
    no traversal or unexpected members.
 4. Extracts into a sibling staging directory, normalizes and re-verifies every mode, checks the
-   manifest identity, version and the four `start`/`apply`/`clear`/`toggle` commands.
+   manifest identity, version and the four `start`/`apply`/`clear`/`cycle` commands.
 5. Commits atomically to `${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/<version>/<target>`
    and never overwrites an existing `<version>/<target>`.
 6. Registers the committed directory with `herdr plugin link <dir> --disabled` when Herdr is

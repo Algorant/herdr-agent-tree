@@ -36,13 +36,6 @@ pub fn set(path: &Path, paused: bool) -> R<()> {
     }
 }
 
-/// Flips the flag and returns the new paused state.
-pub fn flip(path: &Path) -> R<bool> {
-    let now = !is_paused(path);
-    set(path, now)?;
-    Ok(now)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,7 +60,7 @@ mod tests {
     }
 
     #[test]
-    fn set_creates_and_removes_the_flag_and_flip_toggles() {
+    fn set_creates_and_removes_the_flag_idempotently() {
         let dir = TempDir::new("pause-flag");
         let flag = path(dir.path(), "/tmp/a.sock");
         assert!(!is_paused(&flag));
@@ -81,10 +74,5 @@ mod tests {
         assert!(!is_paused(&flag));
         set(&flag, false).unwrap();
         assert!(!is_paused(&flag), "clearing an absent flag is a no-op");
-
-        assert!(flip(&flag).unwrap());
-        assert!(is_paused(&flag));
-        assert!(!flip(&flag).unwrap());
-        assert!(!is_paused(&flag));
     }
 }

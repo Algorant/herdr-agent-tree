@@ -3,6 +3,7 @@
 //! Herdr startup hooks are one-shot commands, so `start`/`apply` acquire a lock and detach
 //! exactly one subscriber per server socket. No supervisor, no reconnect loop, no polling.
 
+use crate::config;
 use crate::forest;
 use crate::pause;
 use crate::projection::{self, ViewState};
@@ -449,7 +450,7 @@ fn wait_for_new_subscriber(dir: &Path, socket: &str, pid: i32) -> R<()> {
 ///
 /// Paused means no subscriber is started at all, so nothing can publish and the native
 /// panel is left alone. The paused flag lives in the state dir and is not reset here, so a
-/// deliberate off state survives a server restart until `apply` or `toggle` clears it.
+/// deliberate off state survives a server restart until `apply` or `cycle` clears it.
 pub fn start() -> R<()> {
     let dir = state_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
@@ -691,30 +692,165 @@ pub fn reload() -> R<()> {
     pass(&socket, &paused, &mut model, &mut view, &mut digest)
 }
 
-/// Explicit `clear` action: removes only the plugin's own tokens and its own view.
+/// Explicit `clear` action: removes only the plugin's own tokens and its own view, and
+/// restores the user's pre-existing `ui.agent_panel_sort` captured by the cycle.
 ///
 /// It does not touch the paused flag: a clear while paused stays clear instead of
 /// re-arming a subscriber that would immediately publish again.
 pub fn clear() -> R<()> {
-    let socket = socket_path()?;
-    clear_projection(&socket)
-}
-
-/// `toggle` action: flips the paused flag and makes the change visible immediately.
-///
-/// Pausing clears the projection (native panel takes over); resuming applies it. The flag
-/// lives in the plugin state dir and is not reset by `start`, so a deliberate off state
-/// survives a server restart until `apply` or another `toggle`.
-pub fn toggle() -> R<()> {
     let dir = state_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
     let socket = socket_path()?;
-    if pause::flip(&pause::path(&dir, &socket))? {
-        clear_projection(&socket)?;
-        eprintln!("agent-tree: paused; Herdr's native Agents panel is back until the next toggle");
-    } else {
-        apply()?;
-        eprintln!("agent-tree: resumed; the delegation tree projection is back");
+    clear_projection(&socket)?;
+    let config = config::config_path()?;
+    if config::restore_original(&dir, &socket, &config)? {
+        reload_config(&socket)?;
+        eprintln!("agent-tree: restored the original ui.agent_panel_sort value");
+    }
+    Ok(())
+}
+
+/// Native agent-panel mode. Grouped and priority are Herdr's own modes; tree is this
+/// plugin's view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Grouped,
+    Priority,
+    Tree,
+}
+
+impl Mode {
+    pub fn next(self) -> Mode {
+        match self {
+            Mode::Grouped => Mode::Priority,
+            Mode::Priority => Mode::Tree,
+            Mode::Tree => Mode::Grouped,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Mode::Grouped => "grouped",
+            Mode::Priority => "priority",
+            Mode::Tree => "tree",
+        }
+    }
+}
+
+/// The pause flag is the tree/native discriminator; the config value tells the two native
+/// modes apart. Unknown, absent and `workspaces` values are grouped (task-10 §2.1).
+pub fn detect_mode(paused: bool, sort: config::SortMode) -> Mode {
+    if !paused {
+        return Mode::Tree;
+    }
+    match sort {
+        config::SortMode::Priority => Mode::Priority,
+        config::SortMode::Grouped => Mode::Grouped,
+    }
+}
+
+/// Ownership of the agent view reported by the read-only probe.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ViewOwner {
+    None,
+    Ours,
+    Foreign(String),
+}
+
+/// Classifies a probe result. A reported active view without a named source, or a probe that
+/// does not report `active`, is a hard error: the cycle never guesses and never evicts.
+pub fn classify_view(active: Option<bool>, source: Option<&str>) -> R<ViewOwner> {
+    match active {
+        Some(false) => Ok(ViewOwner::None),
+        Some(true) => match source {
+            Some(source) if source == projection::VIEW_SOURCE => Ok(ViewOwner::Ours),
+            Some(source) => Ok(ViewOwner::Foreign(source.to_string())),
+            None => Err(
+                "Herdr reported an active agent view without naming its source; refusing to cycle"
+                    .to_string(),
+            ),
+        },
+        None => {
+            Err("could not determine the active agent view owner; refusing to cycle".to_string())
+        }
+    }
+}
+
+/// The paused flag with our own view still active is a desync: the native panel is in charge,
+/// so the stale view must be cleared before the native mode is advanced.
+pub fn needs_desync_clear(owner: &ViewOwner, paused: bool) -> bool {
+    matches!(owner, ViewOwner::Ours) && paused
+}
+
+/// `cycle` action: advances grouped -> priority -> tree -> grouped exactly once.
+///
+/// Grouped and priority delegate entirely to Herdr's native modes through
+/// `ui.agent_panel_sort` plus a live config reload; tree uses the existing projection. A view
+/// owned by another source is never evicted: the action refuses and changes nothing.
+pub fn cycle() -> R<()> {
+    let dir = state_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
+    let socket = socket_path()?;
+    let config = config::config_path()?;
+    let paused = pause::path(&dir, &socket);
+
+    let probe = projection::probe_view(&socket)?;
+    let owner = classify_view(
+        probe.get("active").and_then(Value::as_bool),
+        probe.get("source").and_then(Value::as_str),
+    )?;
+    if let ViewOwner::Foreign(source) = &owner {
+        return Err(format!(
+            "the agent view is owned by {source}; refusing to cycle and never evicting another source (clear or disable it first)"
+        ));
+    }
+    if needs_desync_clear(&owner, pause::is_paused(&paused)) {
+        projection::clear_view(&socket)?;
+        eprintln!("agent-tree: cleared a stale tree view while the native panel was paused");
+    }
+
+    let from = detect_mode(pause::is_paused(&paused), config::read_sort(&config)?);
+    let to = from.next();
+    match from {
+        Mode::Grouped => {
+            config::capture_original(&dir, &socket, &config)?;
+            pause::set(&paused, true)?;
+            config::set_sort(&config, config::PRIORITY_VALUE)?;
+            reload_config(&socket)?;
+        }
+        Mode::Priority => {
+            apply()?;
+        }
+        Mode::Tree => {
+            config::capture_original(&dir, &socket, &config)?;
+            // Set the pause flag before the config write so a concurrent subscriber pass
+            // cannot reinstall the view between the clear and the reload.
+            pause::set(&paused, true)?;
+            clear_projection(&socket)?;
+            config::set_sort(&config, config::GROUPED_VALUE)?;
+            reload_config(&socket)?;
+        }
+    }
+    eprintln!("agent-tree: mode {} -> {}", from.label(), to.label());
+    Ok(())
+}
+
+/// Applies a written `agent_panel_sort` to the running server without a restart.
+fn reload_config(socket: &str) -> R<()> {
+    let result = crate::wire::request(socket, "server.reload_config", json!({}))?;
+    let status = result
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    if status != "applied" {
+        return Err(format!(
+            "Herdr did not apply the configuration (status {status}); the agent panel may still show the previous mode"
+        ));
+    }
+    if let Some(diagnostics) = result.get("diagnostics") {
+        if diagnostics.as_array().is_some_and(|list| !list.is_empty()) {
+            eprintln!("agent-tree: config reload reported diagnostics: {diagnostics}");
+        }
     }
     Ok(())
 }
@@ -760,6 +896,46 @@ mod tests {
         assert!(digest.is_empty());
         assert!(!view.owned());
         assert!(!view.passive());
+    }
+
+    #[test]
+    fn mode_detection_and_cycle_order_are_exact() {
+        use config::SortMode;
+
+        assert_eq!(detect_mode(false, SortMode::Grouped), Mode::Tree);
+        assert_eq!(detect_mode(false, SortMode::Priority), Mode::Tree);
+        assert_eq!(detect_mode(true, SortMode::Grouped), Mode::Grouped);
+        assert_eq!(detect_mode(true, SortMode::Priority), Mode::Priority);
+
+        assert_eq!(Mode::Grouped.next(), Mode::Priority);
+        assert_eq!(Mode::Priority.next(), Mode::Tree);
+        assert_eq!(Mode::Tree.next(), Mode::Grouped);
+        assert_eq!(Mode::Grouped.label(), "grouped");
+        assert_eq!(Mode::Priority.label(), "priority");
+        assert_eq!(Mode::Tree.label(), "tree");
+    }
+
+    #[test]
+    fn view_owner_classification_refuses_foreign_and_unknown_owners() {
+        assert_eq!(classify_view(Some(false), None).unwrap(), ViewOwner::None);
+        assert_eq!(
+            classify_view(Some(true), Some(projection::VIEW_SOURCE)).unwrap(),
+            ViewOwner::Ours
+        );
+        assert_eq!(
+            classify_view(Some(true), Some("plugin:other")).unwrap(),
+            ViewOwner::Foreign("plugin:other".to_string())
+        );
+        assert!(classify_view(Some(true), None).is_err());
+        assert!(classify_view(None, None).is_err());
+
+        assert!(needs_desync_clear(&ViewOwner::Ours, true));
+        assert!(!needs_desync_clear(&ViewOwner::Ours, false));
+        assert!(!needs_desync_clear(&ViewOwner::None, true));
+        assert!(!needs_desync_clear(
+            &ViewOwner::Foreign("plugin:other".to_string()),
+            true
+        ));
     }
 
     #[test]

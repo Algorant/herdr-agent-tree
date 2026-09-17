@@ -14,6 +14,9 @@ pub const SOURCE: &str = "agent-tree";
 /// View ownership source; the `plugin:` form is required by Herdr.
 pub const VIEW_SOURCE: &str = "plugin:agent-tree";
 pub const VIEW_LABEL: &str = "tree";
+/// A source that never owns the view, so `agent.view.clear` with it is a pure ownership
+/// probe: a source mismatch leaves the active view unchanged (task-10 §1.2).
+pub const VIEW_PROBE_SOURCE: &str = "plugin:agent-tree-probe";
 
 /// Widest rank the fixed-width encoding supports.
 pub const MAX_RANKS: usize = 999_999;
@@ -244,6 +247,16 @@ pub fn ensure_view(socket: &str, state: &mut ViewState) -> R<()> {
 /// Source-checked view clear. Never unconditional; a foreign owner is left untouched.
 pub fn clear_view(socket: &str) -> R<Value> {
     request(socket, "agent.view.clear", json!({"source": VIEW_SOURCE}))
+}
+
+/// Read-only ownership probe. Uses a source that can never own the view, so the call reports
+/// the active owner (`active`, `source`, `label`) without clearing anything.
+pub fn probe_view(socket: &str) -> R<Value> {
+    request(
+        socket,
+        "agent.view.clear",
+        json!({"source": VIEW_PROBE_SOURCE}),
+    )
 }
 
 #[cfg(test)]

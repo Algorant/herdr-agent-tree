@@ -5,10 +5,12 @@
 //!   start       startup hook: ensure exactly one subscriber for this server
 //!   apply       explicit re-apply (enable does not run startup hooks)
 //!   reload      deploy-grade re-apply: replace the running subscriber with this build
-//!   clear       remove only plugin-owned tokens and a source-matched view
-//!   toggle      flip the paused flag and apply or clear immediately
+//!   clear       remove only plugin-owned tokens and a source-matched view, and restore the
+//!               original ui.agent_panel_sort captured by cycle
+//!   cycle       advance grouped -> priority -> tree -> grouped once
 //!   subscriber  internal: the long-lived, event-driven projection process
 
+mod config;
 mod decoration;
 mod forest;
 mod identity;
@@ -30,10 +32,10 @@ fn main() -> ExitCode {
         "apply" => lifecycle::apply(),
         "reload" => lifecycle::reload(),
         "clear" => lifecycle::clear(),
-        "toggle" => lifecycle::toggle(),
+        "cycle" => lifecycle::cycle(),
         "subscriber" => lifecycle::run_subscriber(),
         other => {
-            eprintln!("agent-tree: unknown command {other:?}; expected start, apply, reload, clear, toggle or subscriber");
+            eprintln!("agent-tree: unknown command {other:?}; expected start, apply, reload, clear, cycle or subscriber");
             return ExitCode::from(2);
         }
     };

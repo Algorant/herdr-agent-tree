@@ -67,7 +67,7 @@ id=$(awk -F '"' '$1 ~ /^[[:space:]]*id[[:space:]]*=[[:space:]]*$/ { print $2; ex
     printf '%s: staged manifest validation failed: wrong plugin id: %s\n' "$PROGRAM" "${id:-<none>}" >&2
     exit 1
 }
-for action in start apply reload clear toggle; do
+for action in start apply reload clear cycle; do
     grep -Fqx "command = [\"./src/agent-tree\", \"$action\"]" "$output/herdr-plugin.toml" || {
         printf '%s: staged manifest validation failed: missing the %s command\n' "$PROGRAM" "$action" >&2
         exit 1
