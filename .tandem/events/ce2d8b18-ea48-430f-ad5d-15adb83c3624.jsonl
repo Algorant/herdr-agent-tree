@@ -47,3 +47,6 @@
 {"ts":"2026-09-17T21:56:27Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: relatedFiles, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":47}
 {"ts":"2026-09-17T21:56:34Z","event":"accord.released","id":"task-10","summary":"Accord release for task-10","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":48,"data":{"disposition":"discarded"}}
 {"ts":"2026-09-17T22:01:43Z","event":"task.completed","id":"task-10","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":49}
+{"ts":"2026-09-17T22:01:51Z","event":"decision.created","id":"decision-1","summary":"Allow runtime writes of ui.agent_panel_sort for the agent-mode cycle","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":50}
+{"ts":"2026-09-17T22:01:58Z","event":"task.updated","id":"task-11","summary":"Updated task-11 metadata: references, relatedFiles, blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":51}
+{"ts":"2026-09-17T22:02:17Z","event":"accord.claimed","id":"task-11","summary":"Accord claim for task-11","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":52}
