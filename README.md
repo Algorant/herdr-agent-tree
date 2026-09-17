@@ -220,6 +220,15 @@ executable inside this deploy's own staged install path (the `stage/` root or it
 A dead or stale lock is recovered. Anything unverifiable or foreign fails clearly, is never
 signaled, and no replacement is started.
 
+`just deploy` does not trust the action invocation's own exit status. Herdr starts an action
+asynchronously and returns a log record that is still `running`, so deploy waits for that
+exact record to reach a terminal status and surfaces the action's stderr if it failed. It
+then verifies the running image directly: exactly one `agent-tree subscriber` on the staged
+path, no `.stage-old.*` subscriber, and the same SHA-256 for the checkout build, the staged
+file and `/proc/<pid>/exe`. It repeats that check after `herdr server reload-config` and
+fails if the pid changed, so deploy returns only with one stable subscriber and no later
+handoff.
+
 `apply` is unchanged and narrower: it only ensures some subscriber is present and re-installs
 the projection once. Use it to restore the projection after a mid-session socket loss, or
 invoke the `reload` action directly:
@@ -228,6 +237,10 @@ invoke the `reload` action directly:
 herdr plugin action invoke agent-tree.apply
 herdr plugin action invoke agent-tree.reload
 ```
+
+A bare `herdr plugin action invoke agent-tree.reload` only *starts* the action; use
+`just deploy` (or wait for the returned log id to reach a terminal status) when the
+replacement must be complete before you continue.
 
 The staged layout follows the `herdr-notifs-plus` development staging approach: a complete
 plugin root whose `src/<name>` is the real binary rather than a launcher.

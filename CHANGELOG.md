@@ -34,6 +34,17 @@ semantic versioning after its first public release.
 - `README.md` documents the release install as the supported path for a normal user and
   labels `scripts/deploy.sh` a development install from a checkout.
 
+### Fixed
+
+- `just deploy` no longer returns on the async `agent-tree.reload` invocation. Herdr's
+  `plugin action invoke` starts the action and returns a still-running log record, so deploy
+  now waits for that exact record to reach a terminal status and reports the failed phase with
+  the action's stderr. It then verifies the running image three ways (checkout build, staged
+  file, `/proc/<pid>/exe`), and repeats the check after `herdr server reload-config` so no
+  second subscriber handoff can happen after it returns. A real isolated-Herdr ordering test
+  (`tests/e2e/deploy-reload.sh`) and an async-modeling fake-Herdr case in
+  `tests/shell/dev-reload.sh` prevent regression.
+
 ## [0.1.0] - planned
 
 ### Added

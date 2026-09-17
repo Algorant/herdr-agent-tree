@@ -5,7 +5,6 @@ title: "Dogfood the latest x86-64 build and capture native sidebar evidence"
 state: todo
 priority: "high"
 effort: "medium"
-blockers: ["task-6"]
 relatedFiles: ["docs/release-evidence", "release/targets.txt", "README.md", "justfile"]
 tags: ["dogfood", "release-evidence", "validation"]
 accord:
@@ -15,6 +14,6 @@ accord:
   constraints: ["Do not make the repository public, create or push a tag, publish a release, or promote a target in release-targets.txt during the observation period.", "Do not claim owner approval on Algorant's behalf; keep native_sidebar_evidence and owner_approved_by pending until explicit review.", "Use the exact packaged x86_64 candidate digest and source commit in the evidence; a checkout binary alone is insufficient release evidence.", "Do not use cross-built or emulated evidence for aarch64."]
   updatedAt: "2026-09-16T13:28:01Z"
 createdAt: "2026-09-16T12:39:18Z"
-updatedAt: "2026-09-16T13:28:01Z"
+updatedAt: "2026-09-17T21:56:27Z"
 ---
 After the simplified layout and safe `just deploy` workflow land, switch Algorant's local agent-tree installation from the old paused staged binary to the latest checkout and use it in normal Herdr work before any public release. Keep this Task open through the dogfood period. Record objective lifecycle and sidebar observations against an exact x86_64-unknown-linux-musl candidate archive and digest, but keep owner approval pending until Algorant explicitly accepts the dogfood result. This Task establishes the evidence needed to promote x86-64; it does not make the repository public, add a release target, tag or publish.

@@ -37,3 +37,13 @@
 {"ts":"2026-09-16T18:00:20Z","event":"task.updated","id":"task-11","summary":"Updated task-11 metadata: title, relatedFiles, acceptance, constraints, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":37}
 {"ts":"2026-09-16T18:03:48Z","event":"accord.delivered","id":"task-6","summary":"Accord deliver for task-6","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":38}
 {"ts":"2026-09-16T18:03:48Z","event":"task.completed","id":"task-6","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":39}
+{"ts":"2026-09-16T18:08:12Z","event":"task.created","id":"task-12","summary":"Eliminate the post-deploy subscriber handoff race","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":40}
+{"ts":"2026-09-16T18:08:25Z","event":"task.updated","id":"task-7","summary":"Updated task-7 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":41}
+{"ts":"2026-09-17T21:36:50Z","event":"accord.claimed","id":"task-10","summary":"Accord claim for task-10","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":42}
+{"ts":"2026-09-17T21:36:50Z","event":"accord.claimed","id":"task-12","summary":"Accord claim for task-12","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":43}
+{"ts":"2026-09-17T21:55:07Z","event":"accord.delivered","id":"task-12","summary":"Accord deliver for task-12","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":44}
+{"ts":"2026-09-17T21:55:08Z","event":"task.completed","id":"task-12","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":45}
+{"ts":"2026-09-17T21:56:27Z","event":"task.updated","id":"task-7","summary":"Updated task-7 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":46}
+{"ts":"2026-09-17T21:56:27Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: relatedFiles, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":47}
+{"ts":"2026-09-17T21:56:34Z","event":"accord.released","id":"task-10","summary":"Accord release for task-10","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":48,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-17T22:01:43Z","event":"task.completed","id":"task-10","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":49}

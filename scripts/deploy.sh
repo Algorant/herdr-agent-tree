@@ -17,8 +17,10 @@
 #   3. adds or updates the agent-tree [ui.sidebar.agents] rows block in
 #      ~/.config/herdr/config.toml (backed up first; a foreign block is left alone)
 #   4. registers the staged root in your user-global Herdr registry
-#   5. invokes agent-tree.reload so the projection appears and the running subscriber is
-#      replaced by the just-staged build, without a server restart or pane disturbance
+#   5. invokes agent-tree.reload and waits for that invocation's terminal log record, then
+#      verifies the sole running subscriber is the just-staged binary by three-way SHA-256
+#      (checkout build, staged file, running image) before and after the config reload,
+#      without a server restart or pane disturbance
 #
 # A previous install that registered this source checkout (local:<repo>) is relinked
 # to the staged root; no server restart is needed for the move.
@@ -141,6 +143,153 @@ link_staged() {
   herdr plugin link "$STAGE" --enabled >/dev/null 2>&1 \
     || fail "herdr plugin link $STAGE --enabled failed"
   step "linked $STAGE"
+}
+
+# Starts agent-tree.reload and waits for the exact command log record it started.
+#
+# `herdr plugin action invoke` only starts the manifest command and returns a log record
+# whose status is still "running"; its zero exit means "started", never "finished". The
+# action's real outcome lives in that specific record, so the wait is correlated by the
+# returned log id rather than whatever happens to be the newest log line.
+invoke_reload() {
+  local response log_id detail
+  response=$(herdr plugin action invoke agent-tree.reload) \
+    || fail "could not start agent-tree.reload (phase: reload action); the running subscriber was left untouched. Resolve the reported holder and retry."
+  log_id=$(printf '%s' "$response" | python3 -c 'import json, sys
+print(json.load(sys.stdin)["result"]["log"]["log_id"])') \
+    || fail "could not read the reload action log id from Herdr's response (phase: reload action); refusing to guess when the subscriber replacement finished"
+  detail=$(python3 - "$HERDR_BIN" "$log_id" 2>&1 <<'PY'
+import json, subprocess, sys, time
+
+herdr, log_id = sys.argv[1], sys.argv[2]
+deadline = time.monotonic() + 30.0
+record = None
+while True:
+    try:
+        out = subprocess.run(
+            [herdr, "plugin", "log", "list", "--plugin", "agent-tree", "--limit", "200"],
+            capture_output=True, text=True, timeout=10,
+        )
+        logs = json.loads(out.stdout)["result"]["logs"]
+    except Exception:
+        logs = []
+    record = next((entry for entry in logs if entry.get("log_id") == log_id), None)
+    if record is not None and record.get("status") != "running":
+        break
+    if time.monotonic() >= deadline:
+        break
+    time.sleep(0.2)
+if record is None:
+    raise SystemExit("Herdr never reported a terminal status for reload log %s within 30s" % log_id)
+if record.get("status") != "succeeded" or record.get("exit_code") != 0:
+    stderr = (record.get("stderr") or "").strip()
+    raise SystemExit("reload log %s reported %s (exit %s)%s" % (
+        log_id, record.get("status"), record.get("exit_code"),
+        ": " + stderr if stderr else "",
+    ))
+PY
+) || fail "reload action failed (phase: reload action): ${detail:-no detail reported}. The running subscriber was left as the action reported."
+}
+
+# Verifies the deploy contract synchronously for this server socket: exactly one live
+# `agent-tree subscriber` on the staged binary, no subscriber on this socket lingering on a
+# replaced `.stage-old.*` stage, and the checkout build, the staged file and the running
+# image all hash the same. The scan is scoped by the injected HERDR_SOCKET_PATH so another
+# named session's legitimate subscriber on the same global stage is never counted.
+# On success VERIFIED_PID holds the single subscriber's pid.
+verify_subscriber() {
+  local phase=$1 detail
+  detail=$(python3 - "$STAGE/src/agent-tree" "$RELEASE_BINARY" "$PREFIX" "$SOCKET" 2>&1 <<'PY'
+import hashlib, os, sys
+
+stage, release, prefix = (os.path.realpath(arg) for arg in sys.argv[1:4])
+socket = sys.argv[4]
+
+
+def normalize(path):
+    suffix = " (deleted)"
+    return path[: -len(suffix)] if path.endswith(suffix) else path
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def argv(pid):
+    try:
+        raw = open("/proc/%d/cmdline" % pid, "rb").read()
+    except OSError:
+        return []
+    return [part.decode("utf-8", "replace") for part in raw.split(b"\0") if part]
+
+
+def environ(pid):
+    try:
+        raw = open("/proc/%d/environ" % pid, "rb").read()
+    except OSError:
+        return {}
+    values = {}
+    for entry in raw.split(b"\0"):
+        if b"=" in entry:
+            key, value = entry.split(b"=", 1)
+            values[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
+    return values
+
+
+try:
+    stage_hash = sha256(stage)
+except OSError as exc:
+    raise SystemExit("the staged binary %s is unreadable: %s" % (stage, exc))
+
+subscribers, replaced = [], []
+for name in os.listdir("/proc"):
+    if not name.isdigit():
+        continue
+    pid = int(name)
+    try:
+        exe = normalize(os.readlink("/proc/%d/exe" % pid))
+    except OSError:
+        continue
+    if not exe.endswith("/agent-tree"):
+        continue
+    args = argv(pid)
+    if len(args) < 2 or args[1] != "subscriber":
+        continue
+    if environ(pid).get("HERDR_SOCKET_PATH") != socket:
+        continue
+    if exe == stage:
+        subscribers.append(pid)
+    elif exe.startswith(prefix.rstrip("/") + "/.stage-old."):
+        replaced.append((pid, exe))
+
+if replaced:
+    raise SystemExit(
+        "subscriber(s) still running from a replaced stage: "
+        + ", ".join("%d (%s)" % item for item in replaced)
+    )
+if len(subscribers) != 1:
+    raise SystemExit(
+        "expected exactly one live subscriber on %s, found %d: %s"
+        % (stage, len(subscribers), ", ".join(str(pid) for pid in subscribers) or "none")
+    )
+pid = subscribers[0]
+try:
+    release_hash = sha256(release)
+    image_hash = sha256("/proc/%d/exe" % pid)
+except OSError as exc:
+    raise SystemExit("cannot hash the checkout build or the running subscriber image: %s" % exc)
+if not (stage_hash == release_hash == image_hash):
+    raise SystemExit(
+        "hash mismatch (staged=%s release=%s running=%s)" % (stage_hash, release_hash, image_hash)
+    )
+print(pid)
+PY
+) || fail "subscriber verification failed during $phase: ${detail:-no detail reported}"
+  VERIFIED_PID=$detail
 }
 
 case "$MODE" in
@@ -279,13 +428,22 @@ EOF
   fi
 
   link_staged
-  herdr plugin action invoke agent-tree.reload >/dev/null && step "subscriber replaced with this build and projection applied" \
-    || fail "reload failed; the running subscriber was left untouched. Resolve the reported holder and retry."
+  invoke_reload
+  verify_subscriber "after the reload action"
+  pid_before_config=$VERIFIED_PID
+  step "subscriber replaced by this build and verified (pid $pid_before_config, sha256 matches the checkout build)"
 
   # The sidebar rows come from config.toml, so the running server has to re-read it.
   # This reloads configuration only; it does not restart the server or disturb panes.
-  herdr server reload-config >/dev/null 2>&1 && step "config reloaded (no restart, panes untouched)" \
-    || step "could not reload config automatically; run: $HERDR_BIN server reload-config"
+  herdr server reload-config >/dev/null 2>&1 \
+    || fail "reloading config failed (phase: config reload); the verified subscriber is live but the sidebar rows were not applied. Run '$HERDR_BIN server reload-config', or back out with $0 --uninstall."
+
+  # No second handoff may follow the config reload: the same verified pid must still be the
+  # sole subscriber, or deploy must fail rather than report a stale or duplicated one.
+  verify_subscriber "after the config reload"
+  [ "$VERIFIED_PID" = "$pid_before_config" ] \
+    || fail "the subscriber pid changed from $pid_before_config to $VERIFIED_PID after config reload; a later handoff occurred (phase: post-config verification)"
+  step "config reloaded (no restart, panes untouched); subscriber stable at pid $VERIFIED_PID"
 
   say "What the plugin sees right now"
   python3 - "$SOCKET" <<'PY'

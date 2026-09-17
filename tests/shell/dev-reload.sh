@@ -31,7 +31,7 @@ HERDR_DIR=$SANDBOX/herdr
 DATA=$SANDBOX/data
 STAGE=$DATA/herdr-agent-tree/stage
 SOCKET=$CONFIG/herdr/herdr.sock
-mkdir -p "$STATE" "$CONFIG/herdr" "$HOME_DIR" "$BIN_DIR" "$HERDR_DIR" "$DATA"
+mkdir -p "$STATE" "$CONFIG/herdr" "$HOME_DIR" "$BIN_DIR" "$HERDR_DIR" "$DATA" "$HERDR_DIR/logs"
 
 PASS=0
 pass() { PASS=$((PASS + 1)); printf 'ok %d - %s\n' "$PASS" "$1"; }
@@ -88,7 +88,14 @@ chmod 755 "$BIN_DIR/cargo"
 cat >"$BIN_DIR/herdr" <<'SH'
 #!/bin/sh
 set -eu
-stage_file=$FAKE_HERDR_DIR/stage
+# A fake Herdr that models the one behaviour this suite depends on: `plugin action invoke`
+# starts the manifest command and returns immediately with a running log record, and its real
+# outcome only appears later in `plugin log list`. A deploy that treats the invoke exit as
+# completion is therefore caught instead of passing by timing luck.
+dir=$FAKE_HERDR_DIR
+stage_file=$dir/stage
+logs=$dir/logs
+seq_file=$dir/logseq
 command=${1:-}
 shift || true
 case $command in
@@ -110,12 +117,61 @@ case $command in
             action)
                 action=${2#agent-tree.}
                 root=$(cat "$stage_file")
-                exec env \
-                    HERDR_PLUGIN_ID=agent-tree \
-                    HERDR_PLUGIN_ROOT="$root" \
-                    HERDR_PLUGIN_STATE_DIR="$FAKE_HERDR_STATE_DIR" \
-                    HERDR_SOCKET_PATH="$FAKE_HERDR_SOCKET" \
-                    "$root/src/agent-tree" "$action"
+                n=0
+                if [ -f "$seq_file" ]; then n=$(cat "$seq_file"); fi
+                n=$((n + 1))
+                printf '%s\n' "$n" >"$seq_file"
+                log_id=plugin-log-$n
+                mkdir -p "$logs"
+                record=$logs/$log_id.json
+                printf '{"log_id":"%s","plugin_id":"agent-tree","action_id":"%s","status":"running"}\n' \
+                    "$log_id" "$action" >"$record"
+                (
+                    delay=${FAKE_HERDR_ACTION_DELAY:-0}
+                    [ "$delay" = 0 ] || sleep "$delay"
+                    out=$dir/$log_id.out
+                    err=$dir/$log_id.err
+                    rc=0
+                    env HERDR_PLUGIN_ID=agent-tree \
+                        HERDR_PLUGIN_ROOT="$root" \
+                        HERDR_PLUGIN_STATE_DIR="$FAKE_HERDR_STATE_DIR" \
+                        HERDR_SOCKET_PATH="$FAKE_HERDR_SOCKET" \
+                        "$root/src/agent-tree" "$action" >"$out" 2>"$err" || rc=$?
+                    python3 - "$record" "$rc" "$out" "$err" <<'PY'
+import json, os, sys
+record, rc, out, err = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+with open(record) as handle:
+    data = json.load(handle)
+data["status"] = "succeeded" if rc == 0 else "failed"
+data["exit_code"] = rc
+data["stdout"] = open(out).read()
+data["stderr"] = open(err).read()
+tmp = record + ".tmp"
+with open(tmp, "w") as handle:
+    json.dump(data, handle)
+os.replace(tmp, record)
+PY
+                ) >/dev/null 2>&1 </dev/null &
+                printf '{"id":"cli:plugin","result":{"log":{"log_id":"%s","plugin_id":"agent-tree","status":"running"},"type":"plugin_action_invoked"}}\n' "$log_id"
+                ;;
+            log)
+                sub2=${1:-}
+                shift || true
+                case $sub2 in
+                    list)
+                        python3 - "$logs" <<'PY'
+import glob, json, os, sys
+records = []
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.json"))):
+    try:
+        with open(path) as handle:
+            records.append(json.load(handle))
+    except Exception:
+        pass
+print(json.dumps({"id": "cli:plugin", "result": {"logs": records, "type": "plugin_log_list"}}))
+PY
+                        ;;
+                esac
                 ;;
         esac
         ;;
@@ -194,6 +250,7 @@ run_deploy() {
             FAKE_HERDR_DIR="$HERDR_DIR" \
             FAKE_HERDR_STATE_DIR="$STATE" \
             FAKE_HERDR_SOCKET="$SOCKET" \
+            FAKE_HERDR_ACTION_DELAY="${FAKE_HERDR_ACTION_DELAY:-1}" \
             ./scripts/deploy.sh "$@"
     )
 }
@@ -208,6 +265,9 @@ assert_staged_exe() {
 
 # ---------------------------------------------------------------------------
 # 1. First install: one subscriber owning the lock from the staged build.
+#    The fake herdr starts the action asynchronously (1s default delay), so every
+#    assertion below holds only because deploy waits for the action's terminal log record
+#    and verifies the running image before it returns.
 # ---------------------------------------------------------------------------
 printf '== first install\n'
 run_deploy "$CONFIG" >"$SANDBOX/out1" 2>"$SANDBOX/err1" \
@@ -221,10 +281,13 @@ assert_staged_exe "$PID1"
 [ "$(count_locks)" = 1 ] || fail "expected exactly one lock, found $(count_locks)"
 [ "$(staged_subscribers)" = 1 ] || fail "expected exactly one staged subscriber, found $(staged_subscribers)"
 grep -q 'subscriber replaced' "$SANDBOX/out1" || fail 'deploy did not report the subscriber replacement'
+grep -q 'verified (pid' "$SANDBOX/out1" || fail 'deploy did not verify the staged subscriber hash before returning'
 pass 'first deploy starts exactly one subscriber from the staged build'
 
 # ---------------------------------------------------------------------------
-# 2. Repeated deploy: the live subscriber is replaced safely.
+# 2. Repeated deploy: the live subscriber is replaced safely. The action is delayed, so a
+#    deploy that returned on the async invoke instead of its terminal log would still show
+#    the old pid here and fail.
 # ---------------------------------------------------------------------------
 printf '== repeated deploy\n'
 run_deploy "$CONFIG" >"$SANDBOX/out2" 2>"$SANDBOX/err2" \
@@ -328,6 +391,7 @@ fi
 kill -0 "$FOREIGN" 2>/dev/null || fail 'deploy signaled a spoofed-environment holder'
 [ -f "$LOCK" ] || fail 'deploy removed the spoofed holder lock'
 grep -q 'refusing' "$SANDBOX/err6" || fail 'deploy did not explain the spoofed-env refusal'
+grep -q 'phase: reload action' "$SANDBOX/err6" || fail 'deploy did not name the failed phase (reload action)'
 pass 'a same-user holder with spoofed plugin env is refused and never signaled'
 kill "$FOREIGN" 2>/dev/null || true
 wait_dead "$FOREIGN" 2>/dev/null || true
@@ -348,6 +412,7 @@ kill -0 "$FOREIGN" 2>/dev/null || fail 'deploy signaled the foreign holder'
 [ -f "$LOCK" ] || fail 'deploy removed the foreign holder lock'
 grep -q 'refusing' "$SANDBOX/err7" || fail 'deploy did not explain the refusal'
 grep -qF "$FOREIGN" "$SANDBOX/err7" || fail 'deploy did not name the refused pid'
+grep -q 'phase: reload action' "$SANDBOX/err7" || fail 'deploy did not name the failed phase (reload action)'
 pass 'a foreign lock holder fails clearly and is never signaled'
 
 printf '1..%d\n' "$PASS"
