@@ -162,6 +162,9 @@ pub struct ViewState {
     attempted: bool,
     owned: bool,
     passive: bool,
+    /// True once this process has confirmed the plugin's own view is not active. Reset
+    /// whenever the view is (re)installed, so an off -> on -> off cycle clears again.
+    cleared: bool,
 }
 
 impl ViewState {
@@ -183,6 +186,7 @@ pub fn ensure_view(socket: &str, state: &mut ViewState) -> R<()> {
     if state.passive {
         return Ok(());
     }
+    state.cleared = false;
     if !state.attempted {
         state.attempted = true;
         match request(socket, "agent.view.clear", json!({"source": VIEW_SOURCE})) {
@@ -247,6 +251,21 @@ pub fn ensure_view(socket: &str, state: &mut ViewState) -> R<()> {
 /// Source-checked view clear. Never unconditional; a foreign owner is left untouched.
 pub fn clear_view(socket: &str) -> R<Value> {
     request(socket, "agent.view.clear", json!({"source": VIEW_SOURCE}))
+}
+
+/// Ensures the plugin's own view is not active, leaving an absent or foreign view alone.
+///
+/// The clear is source-checked, so it is safe to call whether the view is ours, absent or
+/// foreign, and it is a no-op after the first successful confirmation within one process.
+/// Tokens are never touched here: Agent Tree decorations stay published with the view off.
+pub fn ensure_view_cleared(socket: &str, state: &mut ViewState) -> R<()> {
+    if state.cleared {
+        return Ok(());
+    }
+    clear_view(socket)?;
+    state.cleared = true;
+    state.owned = false;
+    Ok(())
 }
 
 /// Read-only ownership probe. Uses a source that can never own the view, so the call reports

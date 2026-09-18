@@ -24,6 +24,6 @@ title = "Clear Agent Tree decorations and view"
 command = ["./src/agent-tree", "clear"]
 
 [[actions]]
-id = "cycle"
-title = "Cycle the Agents panel: grouped, priority, then the Agent Tree projection"
-command = ["./src/agent-tree", "cycle"]
+id = "toggle"
+title = "Toggle Agent Tree ordering on or off"
+command = ["./src/agent-tree", "toggle"]

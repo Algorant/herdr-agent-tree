@@ -3,9 +3,8 @@
 //! Herdr startup hooks are one-shot commands, so `start`/`apply` acquire a lock and detach
 //! exactly one subscriber per server socket. No supervisor, no reconnect loop, no polling.
 
-use crate::config;
 use crate::forest;
-use crate::pause;
+use crate::mode;
 use crate::projection::{self, ViewState};
 use crate::transport::{self, Model};
 use crate::wire::{Client, Incoming, R};
@@ -448,9 +447,9 @@ fn wait_for_new_subscriber(dir: &Path, socket: &str, pid: i32) -> R<()> {
 
 /// Startup entrypoint: ensures exactly one subscriber per server socket.
 ///
-/// Paused means no subscriber is started at all, so nothing can publish and the native
-/// panel is left alone. The paused flag lives in the state dir and is not reset here, so a
-/// deliberate off state survives a server restart until `apply` or `cycle` clears it.
+/// The subscriber runs in both states so Agent Tree decorations stay published. The
+/// tree-off marker lives in the state dir and is not reset here, so a deliberate native
+/// ordering survives a server restart until `apply`, `reload` or `toggle` changes it.
 pub fn start() -> R<()> {
     let dir = state_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
@@ -459,11 +458,6 @@ pub fn start() -> R<()> {
 }
 
 fn ensure_subscriber(dir: &Path, socket: &str, wait_for_handoff: bool) -> R<()> {
-    if pause::is_paused(&pause::path(dir, socket)) {
-        eprintln!("agent-tree: paused; leaving Herdr's native Agents panel alone and not starting a subscriber");
-        return Ok(());
-    }
-
     if live_holder(dir, socket).is_some() {
         if !wait_for_handoff {
             // An explicit action only needs a subscriber present, not a fresh one. Waiting
@@ -552,8 +546,8 @@ pub fn run_subscriber() -> R<()> {
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut last_digest = String::new();
-    let paused = pause::path(&dir, &socket);
-    pass(&socket, &paused, &mut model, &mut view, &mut last_digest)?;
+    let off = mode::off_path(&dir, &socket);
+    pass(&socket, &off, &mut model, &mut view, &mut last_digest)?;
     events.set_stream_timeout(Duration::from_millis(500))?;
 
     loop {
@@ -573,7 +567,7 @@ pub fn run_subscriber() -> R<()> {
                 if message.get("event").is_none() {
                     continue;
                 }
-                if let Err(e) = pass(&socket, &paused, &mut model, &mut view, &mut last_digest) {
+                if let Err(e) = pass(&socket, &off, &mut model, &mut view, &mut last_digest) {
                     eprintln!("agent-tree: reconcile pass failed: {e}");
                 }
             }
@@ -599,19 +593,17 @@ fn cleanup(socket: &str, model: &mut Model) {
 
 /// One authoritative reconcile pass: fetch, decide, publish only real differences.
 ///
-/// While paused the pass does nothing at all: no fetch, no recompute, no write. If a pause
-/// lands after this pass has already published, the flag is re-checked and the projection is
-/// removed, so the flag always wins the race and the native panel is left in charge.
+/// Decorations are published in both states. The tree-off marker gates only the plugin's
+/// view: with it set, the native Agents list is left in charge; with it clear, this
+/// plugin's `tree` projection is installed. The marker is re-checked after publication so a
+/// toggle-off landing mid-pass still leaves the native list in charge.
 fn pass(
     socket: &str,
-    paused: &Path,
+    off: &Path,
     model: &mut Model,
     view: &mut ViewState,
     last_digest: &mut String,
 ) -> R<()> {
-    if pause::is_paused(paused) {
-        return Ok(());
-    }
     let rows = transport::fetch_rows(socket)?;
     model.install(rows);
 
@@ -630,7 +622,7 @@ fn pass(
     }
     let desired = projection::desired(&placements);
     let writes = projection::reconcile_tokens(socket, model, &desired)?;
-    projection::ensure_view(socket, view)?;
+    apply_view_state(socket, off, view)?;
     eprintln!(
         "agent-tree: {} ranked rows, {} panes written, view owned={} passive={}",
         placements.len(),
@@ -639,38 +631,37 @@ fn pass(
         view.passive()
     );
     *last_digest = model.digest();
-    if pause::is_paused(paused) {
-        let cleared = projection::clear_own_tokens(socket, model);
-        match projection::clear_view(socket) {
-            Ok(result) => eprintln!(
-                "agent-tree: paused during a reconcile pass; cleared {cleared} panes; view -> {result}"
-            ),
-            Err(e) => eprintln!(
-                "agent-tree: paused during a reconcile pass; cleared {cleared} panes; view clear failed: {e}"
-            ),
-        }
-        *view = ViewState::default();
-    }
+    apply_view_state(socket, off, view)?;
     Ok(())
+}
+
+/// Installs the tree view or confirms it is off, according to the marker. Tokens are never
+/// touched here: Agent Tree decorations stay published with tree ordering off.
+fn apply_view_state(socket: &str, off: &Path, view: &mut ViewState) -> R<()> {
+    if mode::is_off(off) {
+        projection::ensure_view_cleared(socket, view)
+    } else {
+        projection::ensure_view(socket, view)
+    }
 }
 
 /// Explicit `apply` action: ensures a subscriber and re-installs the projection once.
 ///
 /// Enable does not run startup hooks and disable clears the view without running plugin code,
 /// so an explicit apply is the documented way to restore the projection in a running server.
-/// Applying always means "show the tree": it clears the paused flag first so it can never be
-/// a silent no-op.
+/// Applying always means "show the tree": it clears the tree-off marker first so it can never
+/// be a silent no-op.
 pub fn apply() -> R<()> {
     let dir = state_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
     let socket = socket_path()?;
-    pause::set(&pause::path(&dir, &socket), false)?;
+    let off = mode::off_path(&dir, &socket);
+    mode::set_off(&off, false)?;
     ensure_subscriber(&dir, &socket, false)?;
-    let paused = pause::path(&dir, &socket);
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut digest = String::new();
-    pass(&socket, &paused, &mut model, &mut view, &mut digest)
+    pass(&socket, &off, &mut model, &mut view, &mut digest)
 }
 
 /// Deploy-grade entrypoint: guarantee the sole subscriber runs this build, then re-apply.
@@ -684,69 +675,24 @@ pub fn reload() -> R<()> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
     let socket = socket_path()?;
     replace_subscriber(&dir, &socket)?;
-    let paused = pause::path(&dir, &socket);
-    pause::set(&paused, false)?;
+    let off = mode::off_path(&dir, &socket);
+    mode::set_off(&off, false)?;
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut digest = String::new();
-    pass(&socket, &paused, &mut model, &mut view, &mut digest)
+    pass(&socket, &off, &mut model, &mut view, &mut digest)
 }
 
-/// Explicit `clear` action: removes only the plugin's own tokens and its own view, and
-/// restores the user's pre-existing `ui.agent_panel_sort` captured by the cycle.
+/// Explicit `clear` action: removes only the plugin's own tokens and its own view.
 ///
-/// It does not touch the paused flag: a clear while paused stays clear instead of
-/// re-arming a subscriber that would immediately publish again.
+/// It does not touch the tree-off marker: a clear while the native list is showing stays
+/// native instead of re-arming a subscriber that would immediately show the tree again.
 pub fn clear() -> R<()> {
     let dir = state_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
     let socket = socket_path()?;
     clear_projection(&socket)?;
-    let config = config::config_path()?;
-    if config::restore_original(&dir, &socket, &config)? {
-        reload_config(&socket)?;
-        eprintln!("agent-tree: restored the original ui.agent_panel_sort value");
-    }
     Ok(())
-}
-
-/// Native agent-panel mode. Grouped and priority are Herdr's own modes; tree is this
-/// plugin's view.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mode {
-    Grouped,
-    Priority,
-    Tree,
-}
-
-impl Mode {
-    pub fn next(self) -> Mode {
-        match self {
-            Mode::Grouped => Mode::Priority,
-            Mode::Priority => Mode::Tree,
-            Mode::Tree => Mode::Grouped,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Mode::Grouped => "grouped",
-            Mode::Priority => "priority",
-            Mode::Tree => "tree",
-        }
-    }
-}
-
-/// The pause flag is the tree/native discriminator; the config value tells the two native
-/// modes apart. Unknown, absent and `workspaces` values are grouped (task-10 §2.1).
-pub fn detect_mode(paused: bool, sort: config::SortMode) -> Mode {
-    if !paused {
-        return Mode::Tree;
-    }
-    match sort {
-        config::SortMode::Priority => Mode::Priority,
-        config::SortMode::Grouped => Mode::Grouped,
-    }
 }
 
 /// Ownership of the agent view reported by the read-only probe.
@@ -758,7 +704,7 @@ pub enum ViewOwner {
 }
 
 /// Classifies a probe result. A reported active view without a named source, or a probe that
-/// does not report `active`, is a hard error: the cycle never guesses and never evicts.
+/// does not report `active`, is a hard error: the toggle never guesses and never evicts.
 pub fn classify_view(active: Option<bool>, source: Option<&str>) -> R<ViewOwner> {
     match active {
         Some(false) => Ok(ViewOwner::None),
@@ -766,92 +712,61 @@ pub fn classify_view(active: Option<bool>, source: Option<&str>) -> R<ViewOwner>
             Some(source) if source == projection::VIEW_SOURCE => Ok(ViewOwner::Ours),
             Some(source) => Ok(ViewOwner::Foreign(source.to_string())),
             None => Err(
-                "Herdr reported an active agent view without naming its source; refusing to cycle"
+                "Herdr reported an active agent view without naming its source; refusing to toggle"
                     .to_string(),
             ),
         },
         None => {
-            Err("could not determine the active agent view owner; refusing to cycle".to_string())
+            Err("could not determine the active agent view owner; refusing to toggle".to_string())
         }
     }
 }
 
-/// The paused flag with our own view still active is a desync: the native panel is in charge,
-/// so the stale view must be cleared before the native mode is advanced.
-pub fn needs_desync_clear(owner: &ViewOwner, paused: bool) -> bool {
-    matches!(owner, ViewOwner::Ours) && paused
+/// True when toggle should install the tree view, false when it should clear it. A foreign
+/// owner is refused, and `classify_view` already refuses an unknown one, so both fail closed.
+pub fn toggle_enables(owner: ViewOwner) -> R<bool> {
+    match owner {
+        ViewOwner::None => Ok(true),
+        ViewOwner::Ours => Ok(false),
+        ViewOwner::Foreign(source) => Err(format!(
+            "the agent view is owned by {source}; refusing to toggle and never evicting another source (clear or disable it first)"
+        )),
+    }
 }
 
-/// `cycle` action: advances grouped -> priority -> tree -> grouped exactly once.
+/// `toggle` action: turns Agent Tree ordering on when no plugin view is active, and off when
+/// this plugin owns the view.
 ///
-/// Grouped and priority delegate entirely to Herdr's native modes through
-/// `ui.agent_panel_sort` plus a live config reload; tree uses the existing projection. A view
-/// owned by another source is never evicted: the action refuses and changes nothing.
-pub fn cycle() -> R<()> {
+/// A view owned by another source, or an owner that cannot be determined, fails closed and
+/// changes nothing: Herdr exposes no view stack that could restore a displaced foreign view.
+/// Turning tree off clears only this plugin's view. The subscriber keeps publishing
+/// `agent_tree_row`/`agent_tree_rank` in both states, and the plugin never writes
+/// `ui.agent_panel_sort`.
+pub fn toggle() -> R<()> {
     let dir = state_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create plugin state dir: {e}"))?;
     let socket = socket_path()?;
-    let config = config::config_path()?;
-    let paused = pause::path(&dir, &socket);
+    let off = mode::off_path(&dir, &socket);
 
     let probe = projection::probe_view(&socket)?;
     let owner = classify_view(
         probe.get("active").and_then(Value::as_bool),
         probe.get("source").and_then(Value::as_str),
     )?;
-    if let ViewOwner::Foreign(source) = &owner {
-        return Err(format!(
-            "the agent view is owned by {source}; refusing to cycle and never evicting another source (clear or disable it first)"
-        ));
-    }
-    if needs_desync_clear(&owner, pause::is_paused(&paused)) {
-        projection::clear_view(&socket)?;
-        eprintln!("agent-tree: cleared a stale tree view while the native panel was paused");
-    }
+    let enable = toggle_enables(owner)?;
 
-    let from = detect_mode(pause::is_paused(&paused), config::read_sort(&config)?);
-    let to = from.next();
-    match from {
-        Mode::Grouped => {
-            config::capture_original(&dir, &socket, &config)?;
-            pause::set(&paused, true)?;
-            config::set_sort(&config, config::PRIORITY_VALUE)?;
-            reload_config(&socket)?;
-        }
-        Mode::Priority => {
-            apply()?;
-        }
-        Mode::Tree => {
-            config::capture_original(&dir, &socket, &config)?;
-            // Set the pause flag before the config write so a concurrent subscriber pass
-            // cannot reinstall the view between the clear and the reload.
-            pause::set(&paused, true)?;
-            clear_projection(&socket)?;
-            config::set_sort(&config, config::GROUPED_VALUE)?;
-            reload_config(&socket)?;
-        }
-    }
-    eprintln!("agent-tree: mode {} -> {}", from.label(), to.label());
-    Ok(())
-}
-
-/// Applies a written `agent_panel_sort` to the running server without a restart.
-fn reload_config(socket: &str) -> R<()> {
-    let result = crate::wire::request(socket, "server.reload_config", json!({}))?;
-    let status = result
-        .get("status")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    if status != "applied" {
-        return Err(format!(
-            "Herdr did not apply the configuration (status {status}); the agent panel may still show the previous mode"
-        ));
-    }
-    if let Some(diagnostics) = result.get("diagnostics") {
-        if diagnostics.as_array().is_some_and(|list| !list.is_empty()) {
-            eprintln!("agent-tree: config reload reported diagnostics: {diagnostics}");
-        }
-    }
+    // Record the durable intent before touching the view so a concurrent subscriber pass
+    // cannot reinstall it between the clear and this process's own reconcile.
+    mode::set_off(&off, !enable)?;
+    ensure_subscriber(&dir, &socket, false)?;
+    let mut model = Model::default();
+    let mut view = ViewState::default();
+    let mut digest = String::new();
+    pass(&socket, &off, &mut model, &mut view, &mut digest)?;
+    eprintln!(
+        "agent-tree: tree ordering {}",
+        if enable { "on" } else { "off" }
+    );
     Ok(())
 }
 
@@ -871,48 +786,39 @@ mod tests {
     use crate::testutil::TempDir;
 
     #[test]
-    fn paused_pass_publishes_nothing_and_sets_no_view() {
-        let dir = TempDir::new("paused-pass");
-        let paused = pause::path(dir.path(), "/tmp/agent-tree-pass.sock");
-        pause::set(&paused, true).unwrap();
+    fn a_native_pass_still_reaches_the_socket_and_owns_no_view() {
+        let dir = TempDir::new("native-pass");
+        let off = mode::off_path(dir.path(), "/tmp/agent-tree-pass.sock");
+        mode::set_off(&off, true).unwrap();
 
         let mut model = Model::default();
         let mut view = ViewState::default();
         let mut digest = String::new();
-        // The unreachable socket proves the paused pass returns before any transport call.
+        // The unreachable socket proves an off pass no longer returns early: it must fetch
+        // and publish decorations before it decides the view.
         let outcome = pass(
             "/nonexistent/agent-tree.sock",
-            &paused,
+            &off,
             &mut model,
             &mut view,
             &mut digest,
         );
         assert!(
-            outcome.is_ok(),
-            "a paused pass must be a no-op: {outcome:?}"
+            outcome.is_err(),
+            "a native pass must still reconcile tokens, so it reaches the socket"
         );
         assert!(model.order.is_empty());
-        assert!(model.rows.is_empty());
-        assert!(digest.is_empty());
         assert!(!view.owned());
         assert!(!view.passive());
     }
 
     #[test]
-    fn mode_detection_and_cycle_order_are_exact() {
-        use config::SortMode;
-
-        assert_eq!(detect_mode(false, SortMode::Grouped), Mode::Tree);
-        assert_eq!(detect_mode(false, SortMode::Priority), Mode::Tree);
-        assert_eq!(detect_mode(true, SortMode::Grouped), Mode::Grouped);
-        assert_eq!(detect_mode(true, SortMode::Priority), Mode::Priority);
-
-        assert_eq!(Mode::Grouped.next(), Mode::Priority);
-        assert_eq!(Mode::Priority.next(), Mode::Tree);
-        assert_eq!(Mode::Tree.next(), Mode::Grouped);
-        assert_eq!(Mode::Grouped.label(), "grouped");
-        assert_eq!(Mode::Priority.label(), "priority");
-        assert_eq!(Mode::Tree.label(), "tree");
+    fn toggle_decision_is_exact_and_fails_closed() {
+        assert!(toggle_enables(ViewOwner::None).unwrap());
+        assert!(!toggle_enables(ViewOwner::Ours).unwrap());
+        let foreign = toggle_enables(ViewOwner::Foreign("plugin:other".to_string())).unwrap_err();
+        assert!(foreign.contains("plugin:other"), "{foreign}");
+        assert!(foreign.contains("never evicting"), "{foreign}");
     }
 
     #[test]
@@ -928,14 +834,6 @@ mod tests {
         );
         assert!(classify_view(Some(true), None).is_err());
         assert!(classify_view(None, None).is_err());
-
-        assert!(needs_desync_clear(&ViewOwner::Ours, true));
-        assert!(!needs_desync_clear(&ViewOwner::Ours, false));
-        assert!(!needs_desync_clear(&ViewOwner::None, true));
-        assert!(!needs_desync_clear(
-            &ViewOwner::Foreign("plugin:other".to_string()),
-            true
-        ));
     }
 
     #[test]

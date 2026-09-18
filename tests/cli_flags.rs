@@ -1,5 +1,5 @@
-//! CLI boundary test for the paused flag. No Herdr server is involved: the socket path is
-//! deliberately absent and lives inside the temporary state directory, and a live holder
+//! CLI boundary test for the tree-off marker. No Herdr server is involved: the socket path
+//! is deliberately absent and lives inside the temporary state directory, and a live holder
 //! entry for that same socket stops `apply` from spawning any subscriber at all.
 
 use sha2::{Digest, Sha256};
@@ -43,8 +43,8 @@ fn server_tag(socket: &str) -> String {
     format!("{:x}", hasher.finalize())[..16].to_string()
 }
 
-fn paused_flag(dir: &Path, socket: &str) -> PathBuf {
-    dir.join(format!("paused-{}.flag", server_tag(socket)))
+fn tree_off_marker(dir: &Path, socket: &str) -> PathBuf {
+    dir.join(format!("tree-off-{}.flag", server_tag(socket)))
 }
 
 fn subscriber_lock(dir: &Path, socket: &str) -> PathBuf {
@@ -61,8 +61,8 @@ fn run(args: &[&str], dir: &Path, socket: &str) -> Output {
 }
 
 #[test]
-fn apply_clears_the_paused_flag_but_clear_does_not() {
-    let dir = TempDir::new("paused");
+fn apply_clears_the_tree_off_marker_but_clear_and_toggle_do_not() {
+    let dir = TempDir::new("marker");
     let socket = dir.path().join("absent.sock");
     let socket = socket.to_str().unwrap();
 
@@ -78,8 +78,8 @@ fn apply_clears_the_paused_flag_but_clear_does_not() {
     )
     .unwrap();
 
-    let flag = paused_flag(dir.path(), socket);
-    std::fs::write(&flag, b"paused\n").unwrap();
+    let marker = tree_off_marker(dir.path(), socket);
+    std::fs::write(&marker, b"tree-off\n").unwrap();
 
     let apply = run(&["apply"], dir.path(), socket);
     assert_eq!(
@@ -88,13 +88,16 @@ fn apply_clears_the_paused_flag_but_clear_does_not() {
         "apply cannot succeed without a server: {}",
         String::from_utf8_lossy(&apply.stderr)
     );
-    assert!(!flag.exists(), "apply must clear the paused flag first");
+    assert!(
+        !marker.exists(),
+        "apply must clear the tree-off marker first"
+    );
     assert!(
         !dir.path().join("subscriber.log").exists(),
         "the live holder must have prevented any subscriber spawn"
     );
 
-    std::fs::write(&flag, b"paused\n").unwrap();
+    std::fs::write(&marker, b"tree-off\n").unwrap();
     let clear = run(&["clear"], dir.path(), socket);
     assert_eq!(
         clear.status.code(),
@@ -102,12 +105,27 @@ fn apply_clears_the_paused_flag_but_clear_does_not() {
         "clear cannot succeed without a server: {}",
         String::from_utf8_lossy(&clear.stderr)
     );
-    assert!(flag.exists(), "clear must never touch the paused flag");
+    assert!(
+        marker.exists(),
+        "clear must never touch the tree-off marker"
+    );
+
+    let toggle = run(&["toggle"], dir.path(), socket);
+    assert_eq!(
+        toggle.status.code(),
+        Some(1),
+        "toggle cannot decide an owner without a server: {}",
+        String::from_utf8_lossy(&toggle.stderr)
+    );
+    assert!(
+        marker.exists(),
+        "toggle must fail closed before touching the tree-off marker"
+    );
 
     for entry in std::fs::read_dir(dir.path()).unwrap() {
         let name = entry.unwrap().file_name().to_string_lossy().into_owned();
         assert!(
-            name.starts_with("paused-") || name.starts_with("subscriber-"),
+            name.starts_with("tree-off-") || name.starts_with("subscriber-"),
             "unexpected file in the temp state dir: {name}"
         );
     }

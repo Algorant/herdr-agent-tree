@@ -45,7 +45,7 @@ say 'Shell syntax'
 sh -n scripts/check.sh scripts/stage-local.sh scripts/release/*.sh \
     tests/shell/install-candidate.sh tests/shell/test-install.sh tests/shell/test-release.sh \
     tests/shell/dev-reload.sh src/agent-tree
-bash -n scripts/deploy.sh tests/e2e/sidebar.sh tests/e2e/deploy-reload.sh tests/e2e/mode-cycle.sh
+bash -n scripts/deploy.sh tests/e2e/sidebar.sh tests/e2e/deploy-reload.sh tests/e2e/toggle.sh
 
 say 'Release version check'
 scripts/release/check-release.sh
@@ -64,8 +64,8 @@ if [ "$run_e2e" = true ]; then
     tests/e2e/deploy-reload.sh
     say 'Isolated Herdr end-to-end sidebar test'
     tests/e2e/sidebar.sh
-    say 'Isolated Herdr grouped/priority/tree mode-cycle test'
-    tests/e2e/mode-cycle.sh
+    say 'Isolated Herdr Agent Tree toggle end-to-end test'
+    tests/e2e/toggle.sh
 fi
 
 say 'All checks passed'

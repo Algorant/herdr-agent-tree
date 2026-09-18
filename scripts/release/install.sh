@@ -194,7 +194,7 @@ done
     || fail 'staged manifest plugin identity is invalid'
 [ "$(awk -F '"' '$1 ~ /^[[:space:]]*version[[:space:]]*=[[:space:]]*$/ { print $2; exit }' "$stage/herdr-plugin.toml")" = "$version" ] \
     || fail 'staged manifest version does not match --version'
-for action in start apply clear cycle; do
+for action in start apply clear toggle; do
     grep -Fqx "command = [\"./src/agent-tree\", \"$action\"]" "$stage/herdr-plugin.toml" \
         || fail "staged manifest is missing the '$action' command"
 done

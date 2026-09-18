@@ -25,13 +25,14 @@ semantic versioning after its first public release.
 
 ### Changed
 
-- The binary tree/native `toggle` is replaced by `agent-tree.cycle`, which advances exactly
-  `grouped -> priority -> tree -> grouped`. Grouped and priority use Herdr's native modes via
-  the single `ui.agent_panel_sort` key plus a live `server.reload_config`; tree keeps the
-  validated projection. The plugin captures the user's pre-existing sort value once and
-  restores it on `clear`/uninstall, never touches the `[ui.sidebar.agents]` rows block, and
-  refuses to evict a foreign view owner. Isolated coverage lives in
-  `tests/e2e/mode-cycle.sh`.
+- The three-state `agent-tree.cycle` is replaced by the owner-safe `agent-tree.toggle`
+  (documented `prefix+alt+t`): with no plugin view it installs the validated `tree`
+  projection, when this plugin owns the view it clears only that view to reveal Herdr's own
+  grouped/priority list, and a foreign or unknown owner fails closed and is never displaced.
+  `agent_tree_row`/`agent_tree_rank` stay published in both states, so decorations remain
+  visible with tree ordering on or off. The plugin no longer writes `ui.agent_panel_sort` and
+  has no sort capture/restore path; `clear` removes only the plugin's tokens and view.
+  Isolated coverage lives in `tests/e2e/toggle.sh`.
 - The repository is organized around three `just` recipes: `just test` (the complete gate,
   including the noninteractive `tests/e2e/sidebar.sh` isolated Herdr test and the hermetic
   `tests/shell/dev-reload.sh` deploy/reload suite), `just build`, and `just deploy` (the
@@ -60,11 +61,10 @@ semantic versioning after its first public release.
   `agent_tree_rank` pane tokens and one `agent.view.set` projection.
 - Recomputed identity validation, unique parent resolution, preorder rank ordering and the
   20-character decoration grammar.
-- Lifecycle actions `start`, `apply`, `clear` and `cycle`, with a socket-scoped paused flag,
-  a single-instance subscriber lock, and a one-key `ui.agent_panel_sort` write that is
-  restored on `clear`.
-- Isolated Herdr end-to-end sidebar test, identity/projection/decoration/pause contract tests,
-  and measured sidebar width evidence.
+- Lifecycle actions `start`, `apply`, `clear` and `toggle`, with a socket-scoped tree-off
+  marker and a single-instance subscriber lock. The plugin writes no configuration.
+- Isolated Herdr end-to-end sidebar test, identity/projection/decoration/tree-off and toggle
+  contract tests, and measured sidebar width evidence.
 
 [Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Algorant/herdr-agent-tree/releases/tag/v0.1.0

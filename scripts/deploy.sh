@@ -107,7 +107,7 @@ stage_root() {
   # source launcher.
   id=$(awk -F '"' '$1 ~ /^[[:space:]]*id[[:space:]]*=[[:space:]]*$/ { print $2; exit }' "$work/herdr-plugin.toml")
   [ "$id" = agent-tree ] || { rm -rf "$work"; fail "staged manifest has the wrong plugin id: ${id:-<none>}"; }
-  for action in start apply reload clear cycle; do
+  for action in start apply reload clear toggle; do
     grep -Fqx "command = [\"./src/agent-tree\", \"$action\"]" "$work/herdr-plugin.toml" \
       || { rm -rf "$work"; fail "staged manifest is missing the '$action' command"; }
   done
@@ -325,10 +325,10 @@ uninstall)
   herdr plugin action invoke agent-tree.clear >/dev/null 2>&1 && step "cleared plugin tokens and view" || step "clear action unavailable (already gone?)"
   herdr plugin disable agent-tree >/dev/null 2>&1 && step "disabled" || true
   herdr plugin unlink agent-tree >/dev/null 2>&1 && step "unregistered" || step "was not registered"
-  # Leave no paused flag behind for a future reinstall to trip over.
-  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr/."
-  if compgen -G "$STATE_DIR/paused-*.flag" >/dev/null 2>&1; then
-    rm -f "$STATE_DIR"/paused-*.flag && step "removed paused flag(s)"
+  # Leave no tree-off marker behind for a future reinstall to trip over.
+  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr/plugins/agent-tree"
+  if compgen -G "$STATE_DIR/tree-off-*.flag" >/dev/null 2>&1; then
+    rm -f "$STATE_DIR"/tree-off-*.flag && step "removed tree-off marker(s)"
   fi
   RELOAD_AFTER=1
 
@@ -481,7 +481,7 @@ PY
 
   say "Done (development install)"
   echo "  Running from:            $STAGE"
-  echo "  Cycle grouped/priority/tree: $HERDR_BIN plugin action invoke agent-tree.cycle"
+  echo "  Toggle Agent Tree ordering: $HERDR_BIN plugin action invoke agent-tree.toggle"
   echo "  Back out at any time:    $0 --uninstall"
   ;;
 esac

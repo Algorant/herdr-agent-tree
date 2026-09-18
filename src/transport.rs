@@ -164,7 +164,7 @@ pub fn hex(bytes: &[u8]) -> String {
 }
 
 /// Stable, short tag derived from a server socket path. Used to scope per-server files in
-/// the shared plugin state dir (the subscriber lock and the paused flag).
+/// the shared plugin state dir (the subscriber lock and the tree-off marker).
 pub fn server_tag(socket: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(socket.as_bytes());

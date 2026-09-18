@@ -11,9 +11,9 @@ never touches panes it cannot validate.
 Status: MVP. Rendering, ordering, identity validation and lifecycle were observed in an
 isolated Herdr 0.9.0 server (see "Verified behavior" below). The plugin has also been
 installed and enabled on Algorant's live Herdr server since 2026-09-15, from the staged
-release root that `scripts/deploy.sh` produces; the mode cycle and the tree were verified
-there. `tests/e2e/sidebar.sh` exercises the tree on a real fixture and
-`tests/e2e/mode-cycle.sh` exercises the mode cycle, both in a throwaway instance (see
+release root that `scripts/deploy.sh` produces; the tree and the owner-safe toggle were
+verified there. `tests/e2e/sidebar.sh` exercises the tree on a real fixture and
+`tests/e2e/toggle.sh` exercises the shortcut toggle, both in a throwaway instance (see
 "End-to-end test").
 
 ## How it works
@@ -63,10 +63,9 @@ standard test harness and needs no running Herdr server, no socket and no networ
 identity recomputation and self-validation, unique parent resolution and the tokenless-parent
 refinement, every contract C5 degenerate case, preorder emission with family contiguity and
 native ordering, the rank format and its ceiling, the decoration grammar and 20-character cap,
-the paused flag, the verified reload holder checks (including the `(deleted)` staged binary),
-the `agent_panel_sort` reader/editor and its byte-exact capture/restore, the mode-decision
-and view-owner classification table, and the CLI boundary where `apply` clears the paused
-flag while `clear` leaves it.
+the tree-off marker, the verified reload holder checks (including the `(deleted)` staged
+binary), the view-owner classification and toggle decision table, and the CLI boundary where
+`apply` clears the tree-off marker while `clear` and a fail-closed `toggle` leave it.
 `tests/shell/dev-reload.sh` drives the real `scripts/deploy.sh` against a fake `herdr`, a fake
 `cargo` and a local socket server to cover first install, repeated reload, stale-lock recovery
 and foreign-holder refusal without a live Herdr server. Hosted CI runs
@@ -76,7 +75,7 @@ and foreign-holder refusal without a live Herdr server. Hosted CI runs
 
 ```sh
 tests/e2e/sidebar.sh      # identity/tree rendering; also run by `just test`
-tests/e2e/mode-cycle.sh   # grouped/priority/tree mode cycle; also run by `just test`
+tests/e2e/toggle.sh       # owner-safe shortcut toggle; also run by `just test`
 ```
 
 The test builds the plugin, creates a fully isolated Herdr instance under a temp directory, and
@@ -103,14 +102,15 @@ What it does, in order:
   the plugin recomputes and drops it before restoring the true value and the rank.
 - Renders the sidebar through a real tmux PTY and asserts the `tree` view label and a Worker row.
 
-`tests/e2e/mode-cycle.sh` is the second isolated test. It needs no Pi agents: it links the
-plugin, creates four synthetic reported agents (one per state) and drives `agent-tree.cycle`
-through `grouped -> priority -> tree -> grouped` twice. It observes Herdr's own `grouped` and
-`priority` headers and row order through a tmux PTY, checks the plugin writes only
-`ui.agent_panel_sort`, that `clear` restores your original value and the rows block byte for
-byte, that leaving tree clears `agent_tree_row`/`agent_tree_rank`, that an unknown sort value
-behaves as grouped rather than an error, that a corrupt restore record and a foreign view
-owner both fail closed, and that the mode survives a config reload and a server restart.
+`tests/e2e/toggle.sh` is the second isolated test. It launches three credential-free Pi
+sessions (one undelegating session plus a validated root/subagent family), installs the
+documented `prefix+alt+t` binding in the isolated config, and presses it through a real tmux
+PTY: tree -> native -> tree -> native. It asserts the `tree` view label and projected order,
+that `agent_tree_row`/`agent_tree_rank` stay published when tree is off, that the native
+Agents header mouse toggle works again when tree is off, that a foreign view owner is never
+displaced by either the action or the shortcut, that `clear` still removes the plugin tokens
+and view, and that `config.toml` is byte-identical after the run (the plugin writes no
+configuration).
 
 What the fixture proves and does not prove:
 
@@ -295,69 +295,54 @@ To apply the projection to a running server without restarting it:
 herdr plugin action invoke agent-tree.apply
 ```
 
-## Cycle the Agents panel mode
+## Toggle Agent Tree ordering
 
-The plugin never reimplements Herdr's native ordering. `agent-tree.cycle` advances exactly
-
-```
-grouped -> priority -> tree -> grouped
-```
-
-where `grouped` and `priority` are Herdr's own modes selected through `ui.agent_panel_sort`
-(plus a live `server.reload_config`), and `tree` is this plugin's projection:
+Agent Tree exposes one owner-safe toggle. `agent-tree.toggle` turns the plugin's ordering on
+when no plugin view is active, and off when this plugin owns the view:
 
 ```sh
-herdr plugin action invoke agent-tree.cycle
+herdr plugin action invoke agent-tree.toggle
 ```
 
-- **grouped** — `ui.agent_panel_sort = "spaces"`; `agent_tree_row`/`agent_tree_rank` and the
-  `tree` view are cleared, so Herdr renders its own grouped panel.
-- **priority** — `ui.agent_panel_sort = "priority"`; the same cleared plugin state, with
-  Herdr's native attention ordering.
-- **tree** — the paused flag is cleared, the subscriber is (re)started, and the validated
-  delegation projection is installed with label `tree`.
-- Before the first runtime write the plugin captures your pre-existing `agent_panel_sort`
-  value (or the fact that it was absent) in a socket-scoped `original-sort-<tag>` record.
-  `clear` restores it and removes the record, so the only configuration key the plugin ever
-  writes at runtime is restored exactly.
-- The plugin refuses to cycle while another source owns the agent view: it never evicts a
-  foreign owner. A paused flag with the plugin's own view still active is treated as a
-  desync, and the stale view is cleared before advancing.
-- Only the `agent_panel_sort` line inside the existing `[ui]` table is edited. The
-  `[ui.sidebar.agents]` rows block, your sidebar widths and every other key are left
-  byte-for-byte untouched.
-- Herdr applies `agent_panel_sort` with `herdr server reload-config`; the server is never
-  restarted to change modes.
+- **No active plugin view -> tree.** The subscriber is ensured, the validated delegation
+  projection is installed with label `tree`, and the sidebar shows the nested forest.
+- **This plugin owns the view -> native.** Only this plugin's view is cleared; Herdr's
+  existing native Agents list returns in whichever grouped/priority order the client already
+  uses. The plugin never writes `ui.agent_panel_sort` and never creates or consumes
+  sort-restore state.
+- **Another source owns the view -> refused, unchanged.** Herdr has no restorable view stack,
+  so the toggle fails clearly and leaves the foreign view exactly as it found it. An owner
+  that cannot be determined also fails closed.
 
-Initial state: with no pause flag the plugin reads the mode as `tree`, so a fresh install
-that runs the startup hook shows the projection and the first `cycle` invocation moves to
-`grouped`. From `grouped`, successive invocations produce `priority`, then `tree`, then
-`grouped` again. The mode is durable: the pause flag lives in `HERDR_PLUGIN_STATE_DIR` and
-the sort value in `config.toml`, so a server restart resumes the same mode (a paused restart
-leaves the native panel alone and starts no subscriber; an unpaused restart re-installs the
-tree).
+`agent_tree_row` and `agent_tree_rank` stay published in both states, so decorations remain
+visible with tree ordering on or off; only the plugin-owned view changes. The tree-off state
+is durable in a socket-scoped `tree-off-<tag>.flag` beside the subscriber lock, so a server
+restart resumes the same ordering.
 
-Unknown, absent and `workspaces` values are treated as `grouped`, never as an error. A
-corrupt `original-sort-<tag>` record fails closed rather than guessing your original value.
+`apply` always means "show the tree": it clears the tree-off flag first. `clear` removes only
+the plugin's own tokens and view and never touches the flag, so a clear while the native list
+is showing stays native. The plugin runtime writes no configuration at all.
 
-`apply` always means "show the tree": it clears the paused flag first. `clear` never touches
-the paused flag, but it restores your original `agent_panel_sort` if the plugin had changed
-it.
+### Toggle with one keystroke
 
-### Cycle with one keystroke
-
-`herdr plugin action invoke` works from a `[[keys.command]]` shell entry:
+`herdr plugin action invoke` works from a `[[keys.command]]` shell entry. This is the
+documented binding for the toggle:
 
 ```toml
 [[keys.command]]
 key = "prefix+alt+t"
 type = "shell"
-description = "cycle grouped / priority / tree"
-command = "herdr plugin action invoke agent-tree.cycle"
+description = "Toggle Agent Tree ordering on or off"
+command = "herdr plugin action invoke agent-tree.toggle"
 ```
 
 Reload it with `herdr server reload-config`; no server restart is needed. The plugin never
 installs this binding for you.
+
+The native Agents header mouse press remains Herdr's own grouped/priority toggle. It works
+whenever tree is off and is inert while tree is active, because Herdr disables the header's
+sort hit region for any active agent view; that is a Herdr client behaviour, not something
+this plugin overrides.
 
 ## Agents row configuration (verified fragment)
 
@@ -460,9 +445,8 @@ Optional styling with existing palette values (not verified in this session):
 ```
 
 Rollback of the fragment: delete the `[ui.sidebar.agents]` block (or restore the rows value
-you had before). Herdr's defaults apply underneath. The plugin runtime writes exactly one
-configuration key, `ui.agent_panel_sort`, and only while cycling modes; it restores your
-original value on `clear`, and `scripts/deploy.sh` only manages the marked rows block above.
+you had before). Herdr's defaults apply underneath. The plugin runtime writes no
+configuration; `scripts/deploy.sh` only manages the marked rows block above.
 
 ## Rollback
 
@@ -472,11 +456,11 @@ herdr plugin disable agent-tree              # Herdr clears the view; tokens rem
 herdr plugin unlink agent-tree               # unregisters; leaves files alone
 ```
 
-`clear` removes exactly the two plugin tokens (source `agent-tree`), only clears the view
-when this plugin owns it, and restores your original `ui.agent_panel_sort`. A running
-subscriber restores its projection on the next relevant event, so `clear` is a one-shot
-reset. To leave the tree for Herdr's native modes, use
-`herdr plugin action invoke agent-tree.cycle` (see "Cycle the Agents panel mode").
+`clear` removes exactly the two plugin tokens (source `agent-tree`) and only clears the view
+when this plugin owns it; it writes no configuration. A running subscriber restores its
+projection on the next relevant event, so `clear` is a one-shot reset. To leave the tree for
+Herdr's native Agents list for more than a moment, use
+`herdr plugin action invoke agent-tree.toggle` (see "Toggle Agent Tree ordering").
 
 ## Verified behavior (isolated Herdr 0.9.0)
 
@@ -549,7 +533,8 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
 
 ## Unverified
 
-The live install (2026-09-15) verified installation, enablement, the mode cycle and the
-rendered tree. Still unverified: mouse targets, indexed `focus_agent` bindings, the visual focus ring,
-`workspace_order` / `tab_order` as secondary sort fields, and styled token rendering in a
-real theme.
+The live install (2026-09-15) verified installation, enablement and the rendered tree; the
+owner-safe toggle and Herdr's native header behaviour were verified in isolation. Still
+unverified: mouse targets on other surfaces, indexed `focus_agent` bindings, the visual focus
+ring, `workspace_order` / `tab_order` as secondary sort fields, and styled token rendering in
+a real theme.
