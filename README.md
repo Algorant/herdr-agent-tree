@@ -338,8 +338,9 @@ the existing `scripts/deploy.sh` path, so the local loop is unchanged.
 
 A per-endpoint lock (`.agent-tree-deploy.lock` under the endpoint prefix) serializes deploy
 and uninstall attempts; a concurrent attempt refuses before touching any stage. Concurrent
-edits to the endpoint config are detected by a hash re-check immediately before the commit
-and are never overwritten, a symlinked config path is refused, and the commit keeps a
+edits to the endpoint config are detected by a hash re-check immediately before the commit —
+by both the deploy and the uninstall path — and are never overwritten, a symlinked config path
+is refused, and the commit keeps a
 recoverable pending marker plus a `cp -p` backup so an interrupted SSH commit is still
 restored.
 
@@ -358,8 +359,9 @@ subscriber identity before stopping anything, refuses a registration outside tha
 own prefix, then identity-verifies and stops the subscriber (same UID, plugin id, socket,
 state dir, `agent-tree subscriber` argv and an owned executable) before unlinking. Registry
 fetch/parse and unlink failures are hard errors, and a later config, registry or stage failure
-automatically restores the prior config, registration/enabled state, stage and subscriber or
-reports the exact rollback failure. It is reversible by re-running the deploy.
+— including a failure to delete the staged root or a leftover `.stage-*` transaction
+directory — automatically restores the prior config, registration/enabled state, stage and
+subscriber or reports the exact rollback failure. It is reversible by re-running the deploy.
 
 `scripts/doctor.sh` is read-only and reports, per endpoint: Herdr reachability/version/
 protocol, plugin registration and source, staged/running SHA-256 and subscriber count, toggle

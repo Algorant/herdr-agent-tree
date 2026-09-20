@@ -55,6 +55,12 @@ semantic versioning after its first public release.
 
 ### Fixed
 
+- Endpoint uninstall now re-reads and hashes the endpoint config immediately before its
+  config commit and refuses to overwrite a concurrent user edit, mirroring the install path;
+  and failures to delete the moved stage root or a leftover `.stage-*` transaction directory
+  are hard transactional failures that leave the transaction open so rollback restores the
+  prior stage, registration, config and subscriber instead of reporting false success.
+
 - `just deploy` no longer returns on the async `agent-tree.reload` invocation. Herdr's
   `plugin action invoke` starts the action and returns a still-running log record, so deploy
   now waits for that exact record to reach a terminal status and reports the failed phase with

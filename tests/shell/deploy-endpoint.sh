@@ -22,6 +22,7 @@ done
 REAL_UNAME=$(command -v uname)
 REAL_MV=$(command -v mv)
 REAL_CAT=$(command -v cat)
+REAL_RM=$(command -v rm)
 
 unset HERDR_SOCKET_PATH HERDR_PLUGIN_STATE_DIR HERDR_PLUGIN_ID HERDR_PLUGIN_ROOT \
       HERDR_PLUGIN_CONFIG_DIR HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID \
@@ -80,12 +81,16 @@ LINK_FAILED=$SB/link-failed
 STAGE_NEW_FAILED=$SB/stage-new-failed
 CONFIG_MV_FAILED=$SB/config-mv-failed
 RELOAD_MARKER=$SB/reload-config-called
+STAGE_CLEANUP_FAILED=$SB/stage-cleanup-failed
+STAGE_RM_FAILED=$SB/stage-rm-failed
+CONFIG_READ_COUNT=$SB/config-read-count
 
 reset_remote() {
     kill_tree_pids
     rm -rf -- "$REMOTE_HOME" "$REMOTE_XDG_CONFIG" "$REMOTE_DATA" "$REMOTE_STATE" \
         "$REG_FILE" "$ENABLED_FILE" "$LINK_FAILED" "$STAGE_NEW_FAILED" "$CONFIG_MV_FAILED" \
-        "$RELOAD_MARKER" "$SB/seq" "$SB/logs" "$SB/reload-done" "$SB/config-edited" "$SB/profiles.log"
+        "$RELOAD_MARKER" "$STAGE_CLEANUP_FAILED" "$STAGE_RM_FAILED" "$CONFIG_READ_COUNT" \
+        "$SB/seq" "$SB/logs" "$SB/reload-done" "$SB/config-edited" "$SB/profiles.log"
     mkdir -p "$REMOTE_HOME" "$REMOTE_CONFIG" "$REMOTE_DATA" "$REMOTE_STATE"
     cat >"$REMOTE_CONFIG/config.toml" <<'TOML'
 [ui]
@@ -129,6 +134,20 @@ exec "$REAL_MV" "\$@"
 SH
 chmod 755 "$BIN/mv"
 
+cat >"$BIN/rm" <<SH
+#!/bin/sh
+last=
+for a in "\$@"; do last=\$a; done
+if [ "\${FAKE_FAIL_UNINSTALL_STAGE_RM:-0}" = 1 ] && [ ! -f "$STAGE_RM_FAILED" ]; then
+    case "\$last" in *.stage-uninstall.*) : >"$STAGE_RM_FAILED"; exit 1 ;; esac
+fi
+if [ "\${FAKE_FAIL_STAGE_CLEANUP:-0}" = 1 ] && [ ! -f "$STAGE_CLEANUP_FAILED" ]; then
+    case "\$last" in *.stage-old.*|*.stage-new.*|*.stage-failed.*) : >"$STAGE_CLEANUP_FAILED"; exit 1 ;; esac
+fi
+exec "$REAL_RM" "\$@"
+SH
+chmod 755 "$BIN/rm"
+
 cat >"$BIN/cat" <<SH
 #!/bin/sh
 last=
@@ -139,6 +158,13 @@ fi
 if [ "\${FAKE_CONCURRENT_CONFIG_EDIT:-0}" = 1 ] && [ -f "\${FAKE_RELOAD_DONE:-/nonexistent}" ] && [ ! -f "\${FAKE_CONFIG_EDITED:-/nonexistent}" ] && [ "\$last" = "\${FAKE_REMOTE_CONFIG_PATH:-}" ]; then
     printf '\n# concurrent edit\n' >> "\$last"
     : > "\$FAKE_CONFIG_EDITED"
+fi
+if [ "\${FAKE_UNINSTALL_CONCURRENT_CONFIG_EDIT:-0}" = 1 ] && [ "\$last" = "\${FAKE_REMOTE_CONFIG_PATH:-}" ]; then
+    n=0
+    if [ -f "\${FAKE_CONFIG_READ_COUNT:-/nonexistent}" ]; then read -r n < "\$FAKE_CONFIG_READ_COUNT"; fi
+    n=\$((n + 1))
+    printf '%s\n' "\$n" > "\$FAKE_CONFIG_READ_COUNT"
+    if [ "\$n" = 2 ]; then printf '\n# concurrent uninstall edit\n' >> "\$last"; fi
 fi
 exec "$REAL_CAT" "\$@"
 SH
@@ -346,6 +372,10 @@ export_fixture_env() {
     export FAKE_PROFILE_LOG="$SB/profiles.log"
     export FAKE_FAIL_UNINSTALL_CLEAR="${DEPLOY_FAIL_UNINSTALL_CLEAR:-0}"
     export FAKE_FAIL_UNINSTALL_RELOAD_CONFIG="${DEPLOY_FAIL_UNINSTALL_RELOAD_CONFIG:-0}"
+    export FAKE_FAIL_UNINSTALL_STAGE_RM="${DEPLOY_FAIL_UNINSTALL_STAGE_RM:-0}"
+    export FAKE_FAIL_STAGE_CLEANUP="${DEPLOY_FAIL_STAGE_CLEANUP:-0}"
+    export FAKE_UNINSTALL_CONCURRENT_CONFIG_EDIT="${DEPLOY_UNINSTALL_CONCURRENT_CONFIG_EDIT:-0}"
+    export FAKE_CONFIG_READ_COUNT="$CONFIG_READ_COUNT"
     export FAKE_STEAL_LOCK="${DEPLOY_STEAL_LOCK:-0}"
     export FAKE_MACHINES="$FAKE/machines.json"
     export FAKE_REMOTE_STATUS="$FAKE/remote-status.json"
@@ -840,5 +870,74 @@ assert argv == [sys.argv[2], "plugin", "action", "invoke", "agent-tree.toggle"],
 PY
 grep -qF 'agent-tree.toggle' "$REMOTE_CONFIG/config.toml" || fail 'the weird-herdr shortcut lost the toggle command'
 pass 'a herdr path with a space and a single quote yields a valid TOML shortcut'
+
+# ---------------------------------------------------------------------------
+# 23. Uninstall re-reads the config before its commit and never overwrites a
+#     concurrent edit; the injected user bytes survive rollback byte-for-byte.
+# ---------------------------------------------------------------------------
+step "scenario 23: uninstall concurrent config edit"
+reset_remote
+run_deploy >"$SB/uncon1.out" 2>"$SB/uncon1.err" || { cat "$SB/uncon1.err" >&2; fail 'concurrent-edit uninstall setup deploy failed'; }
+UN_CON_SHA=$(sha256sum "$REMOTE_STAGE/src/agent-tree" | awk '{print $1}')
+cp -- "$REMOTE_CONFIG/config.toml" "$SB/uncon-before.toml"
+printf '\n# concurrent uninstall edit\n' >"$SB/uncon-suffix.toml"
+cat "$SB/uncon-before.toml" "$SB/uncon-suffix.toml" >"$SB/uncon-expected.toml"
+DEPLOY_UNINSTALL_CONCURRENT_CONFIG_EDIT=1 run_uninstall >"$SB/uncon2.out" 2>"$SB/uncon2.err" \
+    && fail 'uninstall overwrote a concurrent config edit' || true
+grep -q 'Done\. Re-deploy' "$SB/uncon2.out" && fail 'uninstall reported success despite the concurrent edit' || true
+grep -q 'changed after preflight' "$SB/uncon2.err" || { cat "$SB/uncon2.err" >&2; fail 'uninstall did not detect the concurrent edit'; }
+grep -q 'Rollback complete' "$SB/uncon2.err" || { cat "$SB/uncon2.err" >&2; fail 'uninstall did not roll back after the concurrent edit'; }
+cmp -s "$SB/uncon-expected.toml" "$REMOTE_CONFIG/config.toml" \
+    || { diff -u "$SB/uncon-expected.toml" "$REMOTE_CONFIG/config.toml" >&2 || true; fail 'rollback did not preserve the concurrent edit byte-for-byte'; }
+[ "$(cat "$REG_FILE")" = "$REMOTE_STAGE" ] || fail 'the concurrent-edit rollback did not restore the registration'
+[ -f "$ENABLED_FILE" ] || fail 'the concurrent-edit rollback did not restore the enabled state'
+[ "$UN_CON_SHA" = "$(sha256sum "$REMOTE_STAGE/src/agent-tree" | awk '{print $1}')" ] || fail 'the concurrent-edit rollback did not restore the stage'
+[ -z "$(ls -A "$REMOTE_PREFIX" 2>/dev/null | grep '^.stage-uninstall')" ] || fail 'the concurrent-edit rollback left a stage transaction directory'
+[ ! -e "$DEPLOY_LOCK" ] || fail 'the concurrent-edit rollback left the deploy lock'
+python3 - "$(probe_path "$REMOTE_STAGE/src/agent-tree")" "$UN_CON_SHA" <<'PY' || fail 'the concurrent-edit rollback did not restore the subscriber'
+import json, sys
+probe, sha = json.loads(sys.argv[1]), sys.argv[2]
+assert probe["subscriber_count"] == 1, probe
+assert probe["subscribers"][0]["sha256"] == sha, probe
+PY
+pass 'uninstall refuses a concurrent config edit, preserves the user bytes exactly and restores the prior install'
+
+# ---------------------------------------------------------------------------
+# 24. Stage deletion failures are hard transactional failures: no false
+#     success, and the moved stage/registration/config/subscriber are restored.
+# ---------------------------------------------------------------------------
+step "scenario 24: uninstall stage deletion failures"
+for injection in cleanup txn-remove; do
+    reset_remote
+    run_deploy >"$SB/stagedel1.out" 2>"$SB/stagedel1.err" || { cat "$SB/stagedel1.err" >&2; fail "stage-deletion $injection setup deploy failed"; }
+    SD_SHA=$(sha256sum "$REMOTE_STAGE/src/agent-tree" | awk '{print $1}')
+    SD_CONFIG=$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')
+    case "$injection" in
+        cleanup)
+            mkdir -p "$REMOTE_PREFIX/.stage-old.12345"
+            failed=0; DEPLOY_FAIL_STAGE_CLEANUP=1 run_uninstall >"$SB/stagedel.out" 2>"$SB/stagedel.err" || failed=1
+            ;;
+        txn-remove)
+            failed=0; DEPLOY_FAIL_UNINSTALL_STAGE_RM=1 run_uninstall >"$SB/stagedel.out" 2>"$SB/stagedel.err" || failed=1
+            ;;
+    esac
+    [ "$failed" = 1 ] || fail "the $injection stage-deletion failure did not fail the uninstall"
+    grep -q 'phase: uninstall' "$SB/stagedel.err" || { cat "$SB/stagedel.err" >&2; fail "the $injection failure did not name the uninstall phase"; }
+    grep -q 'Done\. Re-deploy' "$SB/stagedel.out" && fail "the $injection failure falsely reported success" || true
+    grep -q 'Rollback complete' "$SB/stagedel.err" || { cat "$SB/stagedel.err" >&2; fail "the $injection failure did not roll back"; }
+    [ "$(cat "$REG_FILE")" = "$REMOTE_STAGE" ] || fail "$injection rollback did not restore the registration"
+    [ -f "$ENABLED_FILE" ] || fail "$injection rollback did not restore the enabled state"
+    [ "$SD_CONFIG" = "$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')" ] || fail "$injection rollback did not restore the config"
+    [ "$SD_SHA" = "$(sha256sum "$REMOTE_STAGE/src/agent-tree" | awk '{print $1}')" ] || fail "$injection rollback did not restore the stage"
+    [ -z "$(ls -A "$REMOTE_PREFIX" 2>/dev/null | grep '^.stage-uninstall')" ] || fail "$injection rollback left a stage transaction directory"
+    [ ! -e "$DEPLOY_LOCK" ] || fail "$injection rollback left the deploy lock"
+    python3 - "$(probe_path "$REMOTE_STAGE/src/agent-tree")" "$SD_SHA" <<'PY' || fail "$injection rollback did not restore the subscriber"
+import json, sys
+probe, sha = json.loads(sys.argv[1]), sys.argv[2]
+assert probe["subscriber_count"] == 1, probe
+assert probe["subscribers"][0]["sha256"] == sha, probe
+PY
+done
+pass 'uninstall stage deletion failures are hard failures that restore the prior stage/subscriber/config/registration'
 
 printf '1..%d\n' "$PASS"

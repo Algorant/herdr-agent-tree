@@ -543,6 +543,7 @@ for plugin in json.load(sys.stdin)["result"]["plugins"]:
   UN_CONFIG_WRITTEN=0
   UN_CONFIG_BACKUP=""
   UN_CONFIG_CHANGED=0
+  UN_ORIG_CONFIG_SHA=""
   UN_STAGE_TXN=""
   UN_STAGE_MOVED=0
   UN_REGISTRATION_CHANGED=0
@@ -558,6 +559,7 @@ for plugin in json.load(sys.stdin)["result"]["plugins"]:
   fi
 
   if remote_exec cat -- "$REMOTE_CONFIG" > "$UN_TMP/orig.toml" 2>/dev/null && [ -s "$UN_TMP/orig.toml" ]; then
+    UN_ORIG_CONFIG_SHA=$(sha256sum -- "$UN_TMP/orig.toml" | awk '{print $1}')
     if ! python3 "$LIB/config.py" remove --file "$UN_TMP/orig.toml" --out "$UN_TMP/new.toml" >/dev/null 2>"$UN_TMP/config.err"; then
       rm -rf -- "$UN_TMP"
       fail "refusing: the endpoint config has damaged agent-tree markers; the subscriber, registration, config and stage are unchanged (phase: uninstall)"
@@ -661,6 +663,14 @@ for plugin in json.load(sys.stdin)["result"]["plugins"]:
   fi
 
   if [ "$UN_CONFIG_CHANGED" = 1 ]; then
+    # Re-read immediately before the commit: a concurrent user edit made after preflight
+    # must never be overwritten, mirroring the install path's preservation check.
+    un_recheck="$UN_TMP/config.recheck.toml"
+    remote_exec cat -- "$REMOTE_CONFIG" > "$un_recheck" \
+      || fail "could not re-read the endpoint config before the uninstall commit (phase: uninstall)"
+    un_recheck_sha=$(sha256sum -- "$un_recheck" | awk '{print $1}')
+    [ "$un_recheck_sha" = "$UN_ORIG_CONFIG_SHA" ] \
+      || fail "the endpoint config changed after preflight; refusing to overwrite a concurrent edit (phase: uninstall)"
     UN_CONFIG_BACKUP="$REMOTE_CONFIG.agent-tree-uninstall-backup.$(date +%Y%m%d-%H%M%S)"
     remote_exec cp -p -- "$REMOTE_CONFIG" "$UN_CONFIG_BACKUP" \
       || fail "could not back up the endpoint config (phase: uninstall)"
@@ -681,8 +691,15 @@ for plugin in json.load(sys.stdin)["result"]["plugins"]:
       || fail "could not move the staged plugin root aside (phase: uninstall)"
     UN_STAGE_MOVED=1
   fi
-  remote_exec sh -c 'for d in "$1"/.stage-old.* "$1"/.stage-new.* "$1"/.stage-failed.*; do if [ -e "$d" ]; then rm -rf -- "$d"; fi; done; exit 0' sh "$REMOTE_PREFIX"
-  remote_exec rm -rf -- "$UN_STAGE_TXN" >/dev/null 2>&1 || true
+  # Every deletion from here is a required transactional step: UN_STAGE_MOVED stays set
+  # until all of them succeed, so a failure leaves the transaction open and rollback
+  # restores the moved stage (or reports an explicit ROLLBACK FAILED when it cannot).
+  remote_exec sh -c 'for d in "$1"/.stage-old.* "$1"/.stage-new.* "$1"/.stage-failed.*; do if [ -e "$d" ]; then rm -rf -- "$d" || exit 1; fi; done' sh "$REMOTE_PREFIX" \
+    || fail "could not remove a leftover stage transaction directory (phase: uninstall)"
+  if [ -n "$UN_STAGE_TXN" ]; then
+    remote_exec rm -rf -- "$UN_STAGE_TXN" \
+      || fail "could not remove the staged plugin root (phase: uninstall)"
+  fi
   UN_STAGE_MOVED=0
   step "removed the staged plugin root"
   remote_exec sh -c 'rm -f -- "$1"/tree-off-*.flag "$1"/paused-*.flag "$1"/original-sort-*; exit 0' sh "$REMOTE_STATE" >/dev/null 2>&1 || true
