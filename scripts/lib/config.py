@@ -6,11 +6,13 @@ marked fragments and never touches anything else:
 
   * the sidebar rows block that must reference ``$agent_tree_row`` so the plugin's
     decoration has a cell to render into, and
-  * the documented ``prefix+alt+t`` shortcut that invokes ``agent-tree.toggle``.
+  * the documented ``prefix+t`` shortcut that invokes ``agent-tree.toggle``.
 
-Both are idempotent. An existing matching fragment is preserved byte-for-byte. A foreign
-``[ui.sidebar.agents]`` block that does not reference ``$agent_tree_row`` and an occupied
-shortcut key are refused before any mutation; nothing in this file ever overwrites them.
+Both are idempotent. An existing matching fragment is preserved byte-for-byte. A managed
+shortcut fragment is migrated to the canonical ``prefix+t`` key; a foreign
+``[ui.sidebar.agents]`` block that does not reference ``$agent_tree_row`` and a foreign
+binding that already occupies the canonical shortcut key are refused before any mutation;
+nothing in this file ever overwrites them.
 """
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ SHORTCUT_BEGIN = "# >>> agent-tree toggle shortcut >>>"
 SHORTCUT_END = "# <<< agent-tree toggle shortcut <<<"
 SIDEBAR_HEADER = "[ui.sidebar.agents]"
 TOKEN = "$agent_tree_row"
-DEFAULT_KEY = "prefix+alt+t"
+DEFAULT_KEY = "prefix+t"
 DEFAULT_COMMAND = "herdr plugin action invoke agent-tree.toggle"
 DEFAULT_ROWS = '[["state_icon", "$agent_tree_row", "terminal_title_stripped"]]'
 
@@ -198,16 +200,23 @@ def ensure(lines: list[str], rows: str, key: str, command: str) -> tuple[list[st
             f"command = {toml_string(command)}\n",
         ]
         if work[shortcut_managed[0] + 1 : shortcut_managed[1]] != body:
+            # Migrating the managed block to the canonical key must never collide with a
+            # foreign binding that already owns that key. Refuse before any mutation.
+            if any(
+                block["key"] == key and "agent-tree.toggle" not in block["command"]
+                for block in key_commands(work)
+            ):
+                raise Refused(f"an occupied shortcut key {key!r} bound to another command")
             work[shortcut_managed[0] + 1 : shortcut_managed[1]] = body
             changed["added_shortcut"] = True
     elif shortcut_damaged:
         raise Refused("a damaged agent-tree shortcut block (need exactly one begin and one end marker, in order)")
     else:
         blocks = key_commands(work)
+        if any(block["key"] == key and "agent-tree.toggle" not in block["command"] for block in blocks):
+            raise Refused(f"an occupied shortcut key {key!r} bound to another command")
         if any(block["key"] == key and "agent-tree.toggle" in block["command"] for block in blocks):
             pass
-        elif any(block["key"] == key for block in blocks):
-            raise Refused(f"an occupied shortcut key {key!r} bound to another command")
         else:
             text = append_fragment("".join(work), shortcut_block(key, command))
             work = text.splitlines(keepends=True)

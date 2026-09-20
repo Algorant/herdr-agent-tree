@@ -66,7 +66,7 @@ sidebar_width = 32
 rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
 
 [[keys.command]]
-key = "prefix+alt+t"
+key = "prefix+t"
 type = "shell"
 command = "herdr plugin action invoke agent-tree.toggle"
 TOML
@@ -338,6 +338,32 @@ if run_doctor --endpoint does-not-exist >"$SB/unknown.out" 2>&1; then
 fi
 grep -q 'unknown endpoint' "$SB/unknown.out" || fail 'doctor did not explain the unknown endpoint'
 pass 'an unknown endpoint fails clearly instead of guessing'
+
+# ---------------------------------------------------------------------------
+# 3b. A legacy prefix+alt+t binding is reported absent for the canonical prefix+t key.
+# ---------------------------------------------------------------------------
+printf '== legacy toggle key\n'
+cp -- "$REMOTE_CONFIG/config.toml" "$SB/remote-config.legacy.bak"
+python3 - "$REMOTE_CONFIG/config.toml" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+assert 'key = "prefix+t"' in text, text
+open(path, "w").write(text.replace('key = "prefix+t"', 'key = "prefix+alt+t"'))
+PY
+LEGACY_SHA=$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')
+run_doctor --endpoint archbox --json >"$SB/legacy.json"
+python3 - "$SB/legacy.json" <<'PY' || fail 'a legacy key was not reported as the canonical key being absent'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["shortcut"]["key"] == "prefix+t", endpoint["shortcut"]
+assert endpoint["shortcut"]["present"] is False, endpoint["shortcut"]
+assert endpoint["shortcut"]["occupied"] is False, endpoint["shortcut"]
+PY
+[ "$LEGACY_SHA" = "$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')" ] \
+    || fail 'the doctor modified the legacy config'
+cp -- "$SB/remote-config.legacy.bak" "$REMOTE_CONFIG/config.toml"
+pass 'a legacy prefix+alt+t binding is reported as the canonical prefix+t shortcut being absent'
 
 # ---------------------------------------------------------------------------
 # 4. A foreign [ui.sidebar.agents] block without the token is reported, not overwritten.

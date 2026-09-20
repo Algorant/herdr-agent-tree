@@ -6,7 +6,7 @@
 # explicit socket, verified at runtime), installs the Pi publisher and launches credential-
 # free idle Pi agents to obtain genuine agent_session values, publishes the pi-agency-shaped
 # relationship tokens derived from those real session paths, and then drives the documented
-# `[[keys.command]]` binding `prefix+alt+t` through native -> tree -> native. It asserts the
+# `[[keys.command]]` binding `prefix+t` through native -> tree -> native. It asserts the
 # `tree` view label and projected order through a real tmux PTY, that agent_tree_row and
 # agent_tree_rank stay published with tree ordering off, that config.toml is never written,
 # that the native Agents header mouse toggle works again when tree is off, and that a foreign
@@ -128,7 +128,7 @@ rows = [["state_icon", "\$agent_tree_row", "terminal_title_stripped"]]
 prefix = "ctrl+b"
 
 [[keys.command]]
-key = "prefix+alt+t"
+key = "prefix+t"
 type = "shell"
 description = "Toggle Agent Tree ordering on or off"
 command = "$HERDR_BIN plugin action invoke agent-tree.toggle"
@@ -289,10 +289,11 @@ wait_header() { # <expected> [attempts]
     fail "expected sidebar header '$want', got '${got:-none}'"
 }
 press_toggle() {
-    # The documented `prefix+alt+t` binding, driven through the real TTY.
+    # The documented `prefix+t` binding, driven through the real TTY: press the prefix
+    # (Ctrl+B), release it, then press `t`.
     tmux -S "$TMUX_SOCKET" send-keys -t "$SESSION" C-b
     sleep 0.4
-    tmux -S "$TMUX_SOCKET" send-keys -t "$SESSION" -l "$(printf '\033t')"
+    tmux -S "$TMUX_SOCKET" send-keys -t "$SESSION" -l "t"
 }
 click_header() {
     local hit row full sb label before start col

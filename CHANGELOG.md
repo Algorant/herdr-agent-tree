@@ -35,7 +35,7 @@ semantic versioning after its first public release.
 ### Changed
 
 - The three-state `agent-tree.cycle` is replaced by the owner-safe `agent-tree.toggle`
-  (documented `prefix+alt+t`): with no plugin view it installs the validated `tree`
+  (documented `prefix+t`): with no plugin view it installs the validated `tree`
   projection, when this plugin owns the view it clears only that view to reveal Herdr's own
   grouped/priority list, and a foreign or unknown owner fails closed and is never displaced.
   `agent_tree_row`/`agent_tree_rank` stay published in both states, so decorations remain
@@ -54,6 +54,12 @@ semantic versioning after its first public release.
   labels `scripts/deploy.sh` a development install from a checkout.
 
 ### Fixed
+
+- The documented toggle shortcut is now `prefix+t` (press `Ctrl+B`, release, then `t`) instead
+  of `prefix+alt+t`. `prefix+alt+t` only fires when the terminal reports Alt/Meta, so it was
+  silently dropped in terminals that do not. The endpoint deploy and doctor now inspect,
+  install and report `prefix+t`, idempotently migrate an existing managed shortcut fragment to
+  the new key, and refuse a foreign `prefix+t` binding before any config mutation.
 
 - Endpoint uninstall now re-reads and hashes the endpoint config immediately before its
   config commit and refuses to overwrite a concurrent user edit, mirroring the install path;

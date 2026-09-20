@@ -470,6 +470,59 @@ grep -q 'left byte-for-byte untouched' "$SB/deploy2.err" || fail 'redeploy did n
 pass 'redeploy preserves the installed config and leaves exactly one subscriber'
 
 # ---------------------------------------------------------------------------
+# 2b. A managed prefix+alt+t shortcut migrates to prefix+t; a foreign prefix+t
+#     colliding with the managed block is refused with the config byte-for-byte unchanged.
+# ---------------------------------------------------------------------------
+step "scenario 2b: managed shortcut migration and collision"
+reset_remote
+run_deploy >"$SB/migrate1.out" 2>"$SB/migrate1.err" || { cat "$SB/migrate1.err" >&2; fail 'migration setup deploy failed'; }
+grep -q 'key = "prefix+t"' "$REMOTE_CONFIG/config.toml" || fail 'the initial deploy did not install prefix+t'
+python3 - "$REMOTE_CONFIG/config.toml" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+assert 'key = "prefix+t"' in text, text
+open(path, "w").write(text.replace('key = "prefix+t"', 'key = "prefix+alt+t"'))
+PY
+grep -q 'prefix+alt+t' "$REMOTE_CONFIG/config.toml" || fail 'the legacy managed key was not staged'
+run_deploy >"$SB/migrate2.out" 2>"$SB/migrate2.err" || { cat "$SB/migrate2.err" >&2; fail 'migration redeploy failed'; }
+grep -q 'key = "prefix+t"' "$REMOTE_CONFIG/config.toml" || fail 'the managed block was not migrated to prefix+t'
+grep -q 'prefix+alt+t' "$REMOTE_CONFIG/config.toml" && fail 'the legacy managed key survived migration' || true
+MIGRATED_SHA=$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')
+run_deploy >"$SB/migrate3.out" 2>"$SB/migrate3.err" || { cat "$SB/migrate3.err" >&2; fail 'post-migration redeploy failed'; }
+[ "$MIGRATED_SHA" = "$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')" ] || fail 'migration was not idempotent'
+grep -q 'left byte-for-byte untouched' "$SB/migrate3.err" || fail 'the idempotent redeploy did not preserve the config'
+
+# Critical collision: the managed block is back on the legacy key while a separate foreign
+# binding already owns prefix+t. Refuse, and leave the complete config byte-for-byte unchanged.
+python3 - "$REMOTE_CONFIG/config.toml" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+text = text.replace('key = "prefix+t"', 'key = "prefix+alt+t"')
+text += '\n[[keys.command]]\nkey = "prefix+t"\ntype = "shell"\ncommand = "echo foreign"\n'
+open(path, "w").write(text)
+PY
+COLLIDE_SHA=$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')
+run_deploy >"$SB/collide.out" 2>"$SB/collide.err" && fail 'deploy migrated a managed block onto a foreign prefix+t' || true
+grep -q 'bound to another command' "$SB/collide.err" || { cat "$SB/collide.err" >&2; fail 'the collision refusal did not explain the occupied key'; }
+[ "$COLLIDE_SHA" = "$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')" ] || fail 'the collision refusal changed the config byte-for-byte'
+[ ! -e "$DEPLOY_LOCK" ] || fail 'the collision refusal left a deploy lock'
+python3 - "$ROOT/scripts/lib/config.py" "$REMOTE_CONFIG/config.toml" <<'PY' || fail 'config.py ensure did not refuse the managed/foreign prefix+t collision'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("config", sys.argv[1])
+config = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(config)
+lines = open(sys.argv[2]).read().splitlines(keepends=True)
+try:
+    config.ensure(lines, config.DEFAULT_ROWS, config.DEFAULT_KEY, config.DEFAULT_COMMAND)
+except config.Refused:
+    raise SystemExit(0)
+raise SystemExit("ensure accepted a foreign prefix+t beside a managed legacy block")
+PY
+pass 'a managed legacy shortcut migrates to prefix+t idempotently, and a foreign prefix+t bound to another command is refused with the config unchanged'
+
+# ---------------------------------------------------------------------------
 # 3. Architecture gate.
 # ---------------------------------------------------------------------------
 step "scenario 3: architecture gate"
@@ -515,13 +568,13 @@ grep -q 'foreign \[ui.sidebar.agents\]' "$SB/foreign.err" || fail 'deploy did no
 reset_remote
 cat >"$REMOTE_CONFIG/config.toml" <<'TOML'
 [[keys.command]]
-key = "prefix+alt+t"
+key = "prefix+t"
 type = "shell"
 command = "echo occupied"
 TOML
 run_deploy >"$SB/occupied.out" 2>"$SB/occupied.err" && fail 'deploy overwrote an occupied shortcut' || true
 grep -q 'bound to another command' "$SB/occupied.err" || fail 'deploy did not explain the occupied shortcut'
-pass 'foreign sidebar blocks and occupied shortcuts are refused before mutation'
+pass 'foreign sidebar blocks and a foreign prefix+t shortcut are refused before mutation'
 
 # ---------------------------------------------------------------------------
 # 6. Substep commit failure restores `.stage-old` to `stage`.

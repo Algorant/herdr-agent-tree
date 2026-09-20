@@ -104,7 +104,7 @@ What it does, in order:
 
 `tests/e2e/toggle.sh` is the second isolated test. It launches three credential-free Pi
 sessions (one undelegating session plus a validated root/subagent family), installs the
-documented `prefix+alt+t` binding in the isolated config, and presses it through a real tmux
+documented `prefix+t` binding in the isolated config, and presses it through a real tmux
 PTY: tree -> native -> tree -> native. It asserts the `tree` view label and projected order,
 that `agent_tree_row`/`agent_tree_rank` stay published when tree is off, that the native
 Agents header mouse toggle works again when tree is off, that a foreign view owner is never
@@ -315,7 +315,7 @@ the existing `scripts/deploy.sh` path, so the local loop is unchanged.
 
 1. preflight (read-only): endpoint Herdr running and protocol-compatible, server version at
    or above the manifest `min_herdr_version`, remote tools present, and the endpoint config
-   free of a foreign `[ui.sidebar.agents]` block or an occupied `prefix+alt+t` shortcut;
+   free of a foreign `[ui.sidebar.agents]` block or an occupied `prefix+t` shortcut;
 2. host-architecture gate: `uname -s -m` must equal the endpoint's, otherwise the deploy
    fails at the build phase with no endpoint change;
 3. build the release binary on the host and stream the self-contained plugin root as a tar
@@ -326,8 +326,9 @@ the existing `scripts/deploy.sh` path, so the local loop is unchanged.
 4. commit the stage atomically, register and enable it, run `agent-tree.reload`, and require
    exactly one live subscriber whose executable is the staged binary with matching
    build/staged/running SHA-256;
-5. install the managed sidebar rows fragment and the `prefix+alt+t` shortcut if they are
-   missing, preserving an existing matching fragment byte-for-byte. The shortcut uses the
+5. install the managed sidebar rows fragment and the `prefix+t` shortcut if they are
+   missing, migrate an existing managed shortcut fragment to `prefix+t`, and refuse a foreign
+   `prefix+t` binding, preserving an existing matching fragment byte-for-byte. The shortcut uses the
    endpoint's resolved absolute `herdr` path (mise first, then `PATH`), so it does not depend
    on the key-command shell's `PATH`; the same absolute binary is used for the remote status
    probe. Remote paths and session values cross the SSH boundary only as argv (a base64
@@ -379,7 +380,7 @@ endpoint: local (kind: local)
   staged:      0a7e7a77...  ~/.local/share/herdr-agent-tree/stage/src/agent-tree
   subscriber:  1 running pids 961729 (sha256 matches staged)
   toggle:      action available, tree-off False
-  shortcut:    present prefix+alt+t
+  shortcut:    present prefix+t
   sidebar:     $agent_tree_row present
   panes:       relationship-bearing 3 (valid 3), ranked 6, delegated-without-relationship 0, ordinary Pi 8
   verdict:     healthy
@@ -428,18 +429,31 @@ is showing stays native. The plugin runtime writes no configuration at all.
 ### Toggle with one keystroke
 
 `herdr plugin action invoke` works from a `[[keys.command]]` shell entry. This is the
-documented binding for the toggle:
+documented binding for the toggle. It uses Herdr's `prefix+t` form, valid custom command
+syntax with no Alt/Meta chord:
 
 ```toml
 [[keys.command]]
-key = "prefix+alt+t"
+key = "prefix+t"
 type = "shell"
 description = "Toggle Agent Tree ordering on or off"
 command = "herdr plugin action invoke agent-tree.toggle"
 ```
 
-Reload it with `herdr server reload-config`; no server restart is needed. The plugin never
-installs this binding for you.
+Press the prefix (`Ctrl+B` by default), release it, then press `t`: Herdr routes the next
+keypress to itself instead of the pane. `prefix+t` is distinct from Herdr's built-in
+`prefix+shift+t` "Rename tab" binding.
+
+The earlier documented key was `prefix+alt+t`, which is unreliable: Alt/Meta chords only
+reach Herdr when the terminal is configured to report Alt/Meta, and otherwise the chord is
+silently swallowed. `prefix+t` has no such terminal dependency.
+
+Reload it with `herdr server reload-config`; no server restart is needed. The plugin runtime
+never writes `config.toml`. `scripts/deploy-endpoint.sh` installs the managed binding for a
+named endpoint, migrates an existing managed binding to `prefix+t` idempotently, and refuses
+a foreign `prefix+t` binding rather than overwriting it. An unmanaged binding (for example
+one you added by hand) is left untouched: change its `key` to `prefix+t` yourself, then run
+`herdr server reload-config`.
 
 The native Agents header mouse press remains Herdr's own grouped/priority toggle. It works
 whenever tree is off and is inert while tree is active, because Herdr disables the header's
