@@ -261,11 +261,22 @@ step "Published the validated root-alpha -> sub-alpha edge"
 # ---------------------------------------------------------------------------
 cap() { tmux -S "$TMUX_SOCKET" capture-pane -p -t "$SESSION" 2>/dev/null || true; }
 header() { cap | grep -oE 'agents +[a-z]+' | tail -1 | awk '{print $2}'; }
+# The sidebar is the first 31 columns of the capture; the 32nd is its border. `cut -c`
+# counts bytes in this test's POSIX locale, so a decorated row such as
+# `○ └─S ? · π - sub-alpha` loses the tail of the name before grep. Slice by character
+# instead, which keeps valid multibyte decorations and still excludes the main pane.
+sidebar_region() {
+    python3 -c '
+import sys
+text = sys.stdin.buffer.read().decode("utf-8", "replace")
+sys.stdout.write("\n".join(line[:31] for line in text.split("\n")))
+'
+}
 order_after_header() {
     local line
     line=$(cap | grep -nE 'agents +[a-z]+' | tail -1 | cut -d: -f1) || true
     [ -n "$line" ] || return 0
-    cap | tail -n +"$((line + 1))" | cut -c1-31 \
+    cap | tail -n +"$((line + 1))" | sidebar_region \
         | grep -oE 'lone-1|root-alpha|sub-alpha' | head -3 | paste -sd, -
 }
 wait_header() { # <expected> [attempts]
