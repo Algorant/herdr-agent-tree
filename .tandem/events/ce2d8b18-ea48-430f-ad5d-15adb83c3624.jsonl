@@ -83,3 +83,7 @@
 {"ts":"2026-09-20T15:08:12Z","event":"accord.rework","id":"task-14","summary":"Accord rework for task-14","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":83}
 {"ts":"2026-09-20T15:20:03Z","event":"accord.delivered","id":"task-14","summary":"Accord deliver for task-14","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":84}
 {"ts":"2026-09-20T15:20:07Z","event":"task.completed","id":"task-14","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":85}
+{"ts":"2026-09-20T19:54:18Z","event":"task.created","id":"task-16","summary":"Replace the unreliable Alt-based tree toggle shortcut","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":86}
+{"ts":"2026-09-20T19:54:26Z","event":"accord.claimed","id":"task-16","summary":"Accord claim for task-16","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":87}
+{"ts":"2026-09-20T20:52:31Z","event":"accord.delivered","id":"task-16","summary":"Accord deliver for task-16","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":88}
+{"ts":"2026-09-20T20:52:34Z","event":"task.completed","id":"task-16","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":89}
