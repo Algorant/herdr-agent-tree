@@ -42,10 +42,18 @@ say 'Locked build'
 cargo_run build --locked
 
 say 'Shell syntax'
-sh -n scripts/check.sh scripts/stage-local.sh scripts/release/*.sh \
+sh -n scripts/check.sh scripts/stage-local.sh scripts/lib/endpoint.sh scripts/release/*.sh \
     tests/shell/install-candidate.sh tests/shell/test-install.sh tests/shell/test-release.sh \
     tests/shell/dev-reload.sh src/agent-tree
-bash -n scripts/deploy.sh tests/e2e/sidebar.sh tests/e2e/deploy-reload.sh tests/e2e/toggle.sh
+bash -n scripts/deploy.sh scripts/deploy-endpoint.sh scripts/doctor.sh \
+    tests/shell/deploy-endpoint.sh tests/shell/doctor.sh \
+    tests/e2e/sidebar.sh tests/e2e/deploy-reload.sh tests/e2e/toggle.sh
+
+say 'Python syntax'
+python3 -c 'import ast, sys
+for path in sys.argv[1:]:
+    ast.parse(open(path, "rb").read(), path)' \
+    scripts/lib/config.py scripts/lib/probe.py scripts/lib/report.py scripts/lib/stop.py
 
 say 'Release version check'
 scripts/release/check-release.sh
@@ -58,6 +66,12 @@ tests/shell/test-release.sh
 
 say 'Dev reload tests'
 tests/shell/dev-reload.sh
+
+say 'Endpoint doctor tests'
+tests/shell/doctor.sh
+
+say 'Endpoint deploy tests'
+tests/shell/deploy-endpoint.sh
 
 if [ "$run_e2e" = true ]; then
     say 'Isolated Herdr deploy/reload ordering test'

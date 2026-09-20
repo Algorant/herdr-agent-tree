@@ -295,6 +295,106 @@ To apply the projection to a running server without restarting it:
 herdr plugin action invoke agent-tree.apply
 ```
 
+### Deploy and diagnose a named Herdr endpoint
+
+`just deploy` above is local-only. When Agent Tree must run on another machine that is saved
+as a Herdr SSH machine, use the explicit-endpoint path:
+
+```sh
+just deploy-endpoint archbox      # deploy the current checkout to that endpoint
+just doctor archbox               # read-only readiness report for that endpoint
+just doctor local                 # read-only readiness report for this machine
+```
+
+The endpoint is always the one named on the command line: `local`, or the unique label,
+profile id, or SSH target of an enabled saved machine (`herdr machine list --json`). A
+machine selected in the TUI never retargets these commands. `--endpoint local` is exactly
+the existing `scripts/deploy.sh` path, so the local loop is unchanged.
+
+`scripts/deploy-endpoint.sh` is transactional and never restarts either server:
+
+1. preflight (read-only): endpoint Herdr running and protocol-compatible, server version at
+   or above the manifest `min_herdr_version`, remote tools present, and the endpoint config
+   free of a foreign `[ui.sidebar.agents]` block or an occupied `prefix+alt+t` shortcut;
+2. host-architecture gate: `uname -s -m` must equal the endpoint's, otherwise the deploy
+   fails at the build phase with no endpoint change;
+3. build the release binary on the host and stream the self-contained plugin root as a tar
+   archive into a temporary endpoint path over the argv-safe SSH runner (no remote shell
+   path is built from a path), verify the transferred SHA-256, and prove the endpoint loader
+   can execute that exact binary (an expected CLI exit is enough; failure prints
+   `file`/`ldd`/glibc diagnostics);
+4. commit the stage atomically, register and enable it, run `agent-tree.reload`, and require
+   exactly one live subscriber whose executable is the staged binary with matching
+   build/staged/running SHA-256;
+5. install the managed sidebar rows fragment and the `prefix+alt+t` shortcut if they are
+   missing, preserving an existing matching fragment byte-for-byte. The shortcut uses the
+   endpoint's resolved absolute `herdr` path (mise first, then `PATH`), so it does not depend
+   on the key-command shell's `PATH`; the same absolute binary is used for the remote status
+   probe. Remote paths and session values cross the SSH boundary only as argv (a base64
+   payload executed without a shell), so spaces and single quotes in an override path work.
+   The shortcut is composed by shell-quoting that absolute argv for execution and then
+   TOML-encoding the complete command string, so a Herdr path with spaces or quotes still
+   yields parseable `config.toml`.
+
+A per-endpoint lock (`.agent-tree-deploy.lock` under the endpoint prefix) serializes deploy
+and uninstall attempts; a concurrent attempt refuses before touching any stage. Concurrent
+edits to the endpoint config are detected by a hash re-check immediately before the commit
+and are never overwritten, a symlinked config path is refused, and the commit keeps a
+recoverable pending marker plus a `cp -p` backup so an interrupted SSH commit is still
+restored.
+
+Any failure after the transaction opens automatically restores the previous stage (tracking each
+commit substep, so a failure between the two stage moves still restores `.stage-old`),
+registration/enabled state, and configuration, then re-establishes and verifies the previous
+subscriber using that prior registered root's own binary. Every signal is guarded by a
+captured Linux process start time, so a reused PID is never signaled: a subscriber that was
+actually replaced is identity-verified and stopped before its stage is moved, and no
+`.stage-failed.*` (deleted) holder is ever stranded. If the rollback itself fails, both the
+previous and candidate stage directories are kept and the original phase plus the rollback
+failure are reported; the lock is released on every exit, and only when its owner token still
+matches this invocation. `--uninstall` is explicit-endpoint and transactional: it preflights
+the registry, ownership, config marker validity and the prospective config bytes and the
+subscriber identity before stopping anything, refuses a registration outside that endpoint's
+own prefix, then identity-verifies and stops the subscriber (same UID, plugin id, socket,
+state dir, `agent-tree subscriber` argv and an owned executable) before unlinking. Registry
+fetch/parse and unlink failures are hard errors, and a later config, registry or stage failure
+automatically restores the prior config, registration/enabled state, stage and subscriber or
+reports the exact rollback failure. It is reversible by re-running the deploy.
+
+`scripts/doctor.sh` is read-only and reports, per endpoint: Herdr reachability/version/
+protocol, plugin registration and source, staged/running SHA-256 and subscriber count, toggle
+action availability and tree-off state, shortcut presence, `$agent_tree_row` presence, and
+pane counts. Pane classification uses only pane-published tokens: a pane that declares
+`role` worker/subagent but lacks a complete relationship is counted separately from an
+ordinary tokenless Pi pane whose role is unknown. Nothing is inferred from a title, name, or
+cwd. A representative report where the local endpoint is healthy and a saved endpoint has the
+shortcut and row token but no plugin:
+
+```
+endpoint: local (kind: local)
+  herdr:       running 0.9.0 (protocol 22, compatible=True, min 0.9.0)
+  plugin:      Agent Tree 0.1.0 enabled at ~/.local/share/herdr-agent-tree/stage (source local)
+  staged:      0a7e7a77...  ~/.local/share/herdr-agent-tree/stage/src/agent-tree
+  subscriber:  1 running pids 961729 (sha256 matches staged)
+  toggle:      action available, tree-off False
+  shortcut:    present prefix+alt+t
+  sidebar:     $agent_tree_row present
+  panes:       relationship-bearing 3 (valid 3), ranked 6, delegated-without-relationship 0, ordinary Pi 8
+  verdict:     healthy
+endpoint: archbox (kind: remote, machine cart-lab, ssh archbox, session default)
+  herdr:       running 0.9.0 (protocol 22, compatible=True, min 0.9.0)
+  plugin:      NOT registered
+  ...
+  verdict:     degraded
+    issue: the agent-tree plugin is not registered
+
+split state: one endpoint is healthy while another is degraded or unusable
+routing: every line above targets the endpoint named on the command line; a machine selected in the TUI never retargets these commands.
+```
+
+`--json` emits a stable document (`{"endpoints": [...], "split_state": bool}`) for scripting.
+The doctor never writes, signals a process, or reloads a server.
+
 ## Toggle Agent Tree ordering
 
 Agent Tree exposes one owner-safe toggle. `agent-tree.toggle` turns the plugin's ordering on

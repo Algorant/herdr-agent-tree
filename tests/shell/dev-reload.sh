@@ -63,6 +63,9 @@ cleanup() {
     fi
     [ -f "$SANDBOX/server.pid" ] && kill "$(cat "$SANDBOX/server.pid")" 2>/dev/null || true
     [ -n "${FOREIGN:-}" ] && kill "$FOREIGN" 2>/dev/null || true
+    # Leave no fake release artifact behind: the next real cargo build restores the cached
+    # optimized binary instead of treating the debug copy as fresh.
+    rm -f -- "$ROOT/target/release/agent-tree"
     rm -rf -- "$SANDBOX"
 }
 trap cleanup EXIT HUP INT TERM
@@ -80,7 +83,11 @@ cat >"$BIN_DIR/cargo" <<'SH'
 set -eu
 dest=$FAKE_PLUGIN/target/release
 mkdir -p "$dest"
-cp "$FAKE_PREBUILT" "$dest/agent-tree"
+# Replace via rename so this never writes through the hardlink cargo keeps between
+# target/release/agent-tree and its deps artifact (which would corrupt the cached real
+# release binary and let `just deploy` ship the debug build).
+cp "$FAKE_PREBUILT" "$dest/agent-tree.new"
+mv -f "$dest/agent-tree.new" "$dest/agent-tree"
 chmod 755 "$dest/agent-tree"
 SH
 chmod 755 "$BIN_DIR/cargo"
