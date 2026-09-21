@@ -1,130 +1,102 @@
-# Release machinery
+# Source release and publication
 
-This documents how agent-tree is built, packaged, installed and gated for release. It ports
-the `Algorant/herdr-notifs-plus` release machinery; the deliberate deviations are listed at
-the end. No tagged release has been published, the repository stays private for now, and the
-owner target allowlist is empty.
+Agent Tree is installed from source by Herdr itself. The sole normal-user path is:
+
+```sh
+herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0
+```
+
+Herdr clones that source revision, runs the manifest `[[build]]` command, registers the
+plugin and manages the checkout. There are no downloadable binary archives, checksum files,
+target allowlists or native-evidence files, and this repository publishes none.
+
+No tagged release has been published yet, the repository is still private, and publication is
+owner-gated. This document describes the contract the final publication sequence must satisfy;
+it does not perform it.
 
 ## Version gate
 
 `herdr-plugin.toml` and `Cargo.toml` must carry the same three-component version, and
-`CHANGELOG.md` must have the exact heading `## [<version>] - planned`. `scripts/release/check-release.sh`
-enforces all three and, when run for a tag, requires the exact `refs/tags/v<version>` ref.
+`CHANGELOG.md` must have an exact `## [<version>] - planned` heading (a dated heading is
+accepted once the release is published). `scripts/release/check-release.sh` enforces both and,
+when run for a tag, requires the exact `refs/tags/v<version>` ref:
 
 ```sh
-./scripts/release/check-release.sh
+./scripts/release/check-release.sh --ref refs/tags/v0.1.0
 ```
 
-## Supported targets
+The same script requires exactly one manifest `[[build]]` command and that it is
+`["cargo", "build", "--locked", "--release"]`, so the published revision cannot point Herdr at
+a different build.
 
-Release archives are built for:
+## Install contract
 
-- `x86_64-unknown-linux-musl`
-- `aarch64-unknown-linux-musl`
+`herdr-plugin.toml` declares:
 
-Both use `rust-lld` with Rust's bundled musl startup objects (`.cargo/config.toml`), so no
-unpinned cross compiler is downloaded. The plugin manifest is `platforms = ["linux"]`.
+- `[[build]] command = ["cargo", "build", "--locked", "--release"]`, run by Herdr in the
+  plugin root before it registers the plugin; and
+- runtime `[[startup]]`/`[[actions]]` commands of the form
+  `["./src/agent-tree", "<start|apply|reload|clear|toggle>"]`.
 
-## Packaging
+`src/agent-tree` is the tracked launcher (a repository convention shared with
+`herdr-notifs-plus`). It execs the freshly built `target/release/agent-tree`, so a clean
+checkout with no pre-existing `target/` works after Herdr runs the build, and the manifest
+never invokes Cargo at runtime. `tests/shell/source-install.sh` proves this contract
+hermetically: it exports only tracked files to a target-less tree, runs the manifest build
+argv verbatim, and checks that every runtime manifest command is executable and reaches the
+built binary.
 
-`scripts/release/package.sh` builds one deterministic archive and its `.sha256` sidecar for a
-target from an already-built binary directory:
+Herdr owns installation, registration and rebuild/update behavior. Updating means reinstalling
+from a newer ref (`herdr plugin install Algorant/herdr-agent-tree --ref <newer-tag>`); Herdr
+replaces the managed checkout. Removing the plugin is `herdr plugin uninstall agent-tree`.
 
-```sh
-SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) \
-  ./scripts/release/package.sh --target x86_64-unknown-linux-musl \
-  --binary-dir target/x86_64-unknown-linux-musl/release
-```
+## Local development tooling
 
-The archive is `agent-tree-v<version>-<target>.tar.gz` and always contains exactly:
+These are development and administration paths, not the normal user install:
 
-```
-agent-tree-v<version>-<target>/
-├── CHANGELOG.md        (0644)
-├── LICENSE             (0644)
-├── README.md           (0644)
-├── herdr-plugin.toml   (0644)
-└── src/
-    └── agent-tree      (0755)
-```
-
-Ownership is `0/0`, member names are sorted, modes are exact, and the mtime is pinned to
-`SOURCE_DATE_EPOCH`, so two clean builds are byte-identical. `scripts/release/check-binaries.sh`
-rejects a binary whose ELF machine is not the target's or which has any `NEEDED` entry.
-`scripts/release/checksums.sh` writes the aggregate `agent-tree-v<version>-SHA256SUMS` file.
-
-## Installer
-
-`scripts/release/install.sh` installs one caller-pinned release without elevated privileges:
-
-1. Downloads `https://github.com/Algorant/herdr-agent-tree/releases/download/v<version>/agent-tree-v<version>-<target>.tar.gz`
-   with `curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2`.
-2. Verifies the caller-supplied 64-character lowercase SHA-256.
-3. Enforces a strict GNU-tar allowlist: exactly the seven entries above, with their modes, and
-   no traversal or unexpected members.
-4. Extracts into a sibling staging directory, normalizes and re-verifies every mode, checks the
-   manifest identity, version and the four `start`/`apply`/`clear`/`toggle` commands.
-5. Commits atomically to `${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/<version>/<target>`
-   and never overwrites an existing `<version>/<target>`.
-6. Registers the committed directory with `herdr plugin link <dir> --disabled` when Herdr is
-   available. It never edits `config.toml` and never enables the plugin.
-
-See "Install" in `README.md` for the user-facing commands and the manual activation steps.
-
-## Local development stage
-
-`scripts/stage-local.sh` writes a complete plugin root under the Cargo target directory
-(`target/stage-local` by default) from a debug or release binary. It never links the result or
-touches user state. `scripts/deploy.sh` is the development install from a checkout; it is
-not the normal user path.
+- `scripts/deploy.sh` (`just deploy`) builds, stages a self-contained plugin root under the
+  user data directory and registers that staged root against the live server.
+- `scripts/stage-local.sh` writes an inert complete plugin root under the Cargo target
+  directory and never links it or touches user state.
+- `scripts/deploy-endpoint.sh` (`just deploy-endpoint <name>`) and `scripts/doctor.sh`
+  (`just doctor <name>`) deploy to or diagnose an explicitly named local or saved remote
+  endpoint.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on pushes and pull requests with a pinned Rust 1.81.0
-toolchain:
+toolchain. It builds the locked source and runs `scripts/check.sh --no-e2e`: `cargo fmt
+--check`, `cargo clippy --locked --all-targets --all-features -- -D warnings`, `cargo test
+--locked --all-targets`, `cargo build --locked`, shell syntax checks, the clean-source install
+smoke test, the local stage tests, the release version gate and the hermetic endpoint suites.
+Hosted CI skips only the Herdr/Pi end-to-end test, which `just test` runs locally.
 
-- `cargo build --locked` as an explicit build step, then `scripts/check.sh --no-e2e`:
-  `cargo fmt --check`, `cargo clippy --locked --all-targets --all-features -- -D warnings`,
-  `cargo test --locked --all-targets`, `cargo build --locked`, shell syntax checks, and the
-  hermetic installer and release suites. Hosted CI skips only the Herdr/Pi end-to-end test,
-  which `just test` runs locally.
-- A step that runs `scripts/release/check-targets.sh` and fails the job unless the owner gate
-  stays closed.
-- A candidate matrix that builds both musl targets twice, compares the archives byte for byte,
-  runs them through the real installer with a caller-pinned digest, and asserts ELF machine
-  and static linkage.
+## Tag workflow
 
-## Owner-gated final promotion
+`.github/workflows/release.yml` runs only on a `v*` tag push. Its validate job reruns
+`scripts/release/check-release.sh --ref "$GITHUB_REF"` and the clean-source install smoke test.
+Its publish job then creates the tag release with `gh release create --verify-tag` and no
+uploaded assets, so GitHub's own source archive is the immutable release. It refuses to replace
+an existing release.
 
-`release/targets.txt` is the owner-controlled allowlist. Each line is
-`RUST_TARGET|TRACKED_NATIVE_EVIDENCE_PATH|OWNER_APPROVER`. It is intentionally empty.
+## Marketplace discovery prerequisites
 
-`scripts/release/check-targets.sh` refuses to approve anything until a target has a tracked
-`docs/release-evidence/*.md` file with a matching `target`, the current manifest `version`, a
-64-character lowercase `candidate_sha256`, `native_sidebar_evidence: passed` and the matching
-`owner_approved_by`. Aarch64 requires native aarch64 TUI/sidebar evidence; cross-built or
-emulated evidence is insufficient. The promotion manifest must be tracked by Git, and it and every
-evidence file must be in the same reviewed release commit.
+The Herdr marketplace indexes public GitHub repositories tagged with the `herdr-plugin` topic
+whose default branch contains a parseable `herdr-plugin.toml`. This repository already has a
+root manifest with the required `id`, `name`, `version`, `min_herdr_version` and `platforms`;
+publication must add the topic and make the repository public.
 
-`scripts/release/check-targets.sh` fails closed while the allowlist is empty. The tag workflow in
-`.github/workflows/release.yml` runs only on a `v*` tag push and would stop at that same gate
-before building or publishing. Nothing in this repository creates a tag, publishes a release,
-or changes repository visibility.
+## Owner-gated publication sequence
 
-## Deliberate deviations from herdr-notifs-plus
+Publication happens only after the task-8-2 managed-install dogfood and Algorant's explicit
+approval of that exact result:
 
-- **License state.** agent-tree committed an MIT `LICENSE` from the start, so candidate and
-  final archives both include it; there is no pre-license gate and no candidate mode that
-  rejects a project LICENSE. Final promotion is still owner-gated on target evidence.
-- **Single binary.** agent-tree has one executable (`agent-tree`); the notifs-plus doctor
-  binary, `assets/`, `LICENSES/`, `config.toml.example` and `THIRD_PARTY_NOTICES.md` do not
-  exist here and are not packaged.
-- **Activation and configuration.** The installer registers the plugin disabled and never
-  edits Herdr configuration. Activation is manual: add the sidebar rows block, run
-  `herdr plugin enable agent-tree`, reload the config and invoke `agent-tree.apply`. The
-  sidebar fragment is `rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]`.
-- **Supply-chain reporting.** The notifs-plus CI job that generated dependency-license,
-  RustSec and CycloneDX reports is not ported; agent-tree has a small dependency set and the
-  job was not required for release readiness.
-- **Publication state.** The repository remains private, no tag exists and no release has been
-  published. Publication is out of scope and requires explicit owner approval.
+1. Remove the internal `.tandem` coordination metadata in the final reviewed release commit.
+2. Make `Algorant/herdr-agent-tree` public and add the `herdr-plugin` topic.
+3. Create the immutable `v0.1.0` tag on the reviewed release commit.
+4. Confirm the hosted CI and tag-workflow runs complete successfully.
+5. Verify a clean anonymous `herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0` on a
+   machine with no prior checkout or `target/` directory.
+
+Nothing in this repository makes the repository public, creates a tag or publishes a release
+outside that approved sequence.

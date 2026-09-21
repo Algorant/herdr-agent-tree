@@ -21,16 +21,16 @@ semantic versioning after its first public release.
   it) replaces the running subscriber with the just-staged build, recovers a dead lock, and
   refuses an unverifiable or foreign holder without signaling it, so `just deploy` is safe to
   repeat against a live server. Hermetic coverage lives in `tests/shell/dev-reload.sh`.
-- Release packaging for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`:
-  deterministic per-target archives, per-archive `.sha256` sidecars and an aggregate
-  `agent-tree-v<version>-SHA256SUMS` file.
-- A checksum-pinned, HTTPS-only release installer with a strict archive allowlist, atomic
-  versioned installation and disabled registration.
+- Herdr-managed source installation as the sole normal-user path: `herdr-plugin.toml` declares
+  a `[[build]] command = ["cargo", "build", "--locked", "--release"]`, so
+  `herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0` clones the plugin, runs the
+  locked Cargo release build and registers a runnable plugin. Standard Cargo package metadata
+  (`description`, `license`, `repository`) was added, with the README inferred from the
+  conventional filename; `publish` stays `false`.
 - CI running the shared `scripts/check.sh` quality gate (formatting, Clippy, `cargo
-  build --locked`, `cargo test --locked` and the hermetic packaging/installer suites), plus
-  candidate musl builds for both targets.
-- An owner- and evidence-gated tag workflow that fails closed while
-  `release/targets.txt` has no promoted target. No tag or release has been published.
+  build --locked`, `cargo test --locked`, and the hermetic source-install, local-stage and
+  endpoint suites), with a tag workflow that validates and publishes the immutable source
+  release. No tag or release has been published yet.
 
 ### Changed
 
@@ -47,11 +47,19 @@ semantic versioning after its first public release.
   `tests/shell/dev-reload.sh` deploy/reload suite), `just build`, `just deploy` (the local
   checkout development install now at `scripts/deploy.sh`, which stages and replaces the live
   subscriber), `just deploy-endpoint <name>` (an explicit remote or local endpoint), and
-  `just doctor <name>` (a read-only endpoint report). Release internals live under
-  `scripts/release/`, shell tests under
-  `tests/shell/`, and the owner allowlist at `release/targets.txt`.
-- `README.md` documents the release install as the supported path for a normal user and
-  labels `scripts/deploy.sh` a development install from a checkout.
+  `just doctor <name>` (a read-only endpoint report). The source release gate lives at
+  `scripts/release/check-release.sh` and shell tests under `tests/shell/`.
+- `README.md` documents `herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0` as the
+  supported path for a normal user and labels `scripts/deploy.sh` a development install from a
+  checkout.
+
+### Removed
+
+- The bespoke checksum-pinned release installer, the musl binary archive packaging with
+  per-target checksums, and the owner target-promotion/native-evidence gate
+  (`scripts/release/install.sh`, `package.sh`, `checksums.sh`, `check-binaries.sh`,
+  `check-targets.sh`, `release/targets.txt`, `docs/release-evidence/`), together with their
+  exclusive tests and the musl candidate CI job. Herdr now builds and installs from source.
 
 ### Fixed
 

@@ -2,7 +2,8 @@
 # agent-tree DEVELOPMENT install / uninstall from this checkout, for your REAL Herdr server.
 #
 # This is a development install from a checkout, not the normal user install path. A normal
-# user installs a published release artifact with scripts/release/install.sh; see README.md.
+# user installs from source with `herdr plugin install Algorant/herdr-agent-tree --ref <tag>`;
+# see README.md.
 #
 #   scripts/deploy.sh              install, stage, register and reload
 #   scripts/deploy.sh --uninstall  remove and restore config
@@ -361,7 +362,7 @@ PY
 
 install)
   say "Installing agent-tree as a development install from this checkout"
-  echo "  This is not the normal user path; see scripts/release/install.sh and README.md for a release install."
+  echo "  This is not the normal user path; use 'herdr plugin install Algorant/herdr-agent-tree --ref <tag>' (see README.md)."
   echo "  This will build a release binary, stage a self-contained plugin root at:"
   echo "    $STAGE"
   echo "  and register that staged root (not this source checkout), then add or update"

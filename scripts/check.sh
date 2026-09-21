@@ -43,7 +43,7 @@ cargo_run build --locked
 
 say 'Shell syntax'
 sh -n scripts/check.sh scripts/stage-local.sh scripts/lib/endpoint.sh scripts/release/*.sh \
-    tests/shell/install-candidate.sh tests/shell/test-install.sh tests/shell/test-release.sh \
+    tests/shell/source-install.sh tests/shell/stage-local.sh \
     tests/shell/dev-reload.sh src/agent-tree
 bash -n scripts/deploy.sh scripts/deploy-endpoint.sh scripts/doctor.sh \
     tests/shell/deploy-endpoint.sh tests/shell/doctor.sh \
@@ -58,11 +58,11 @@ for path in sys.argv[1:]:
 say 'Release version check'
 scripts/release/check-release.sh
 
-say 'Installer tests'
-tests/shell/test-install.sh
+say 'Clean source install smoke test'
+tests/shell/source-install.sh
 
-say 'Release tests'
-tests/shell/test-release.sh
+say 'Local stage tests'
+tests/shell/stage-local.sh
 
 say 'Dev reload tests'
 tests/shell/dev-reload.sh

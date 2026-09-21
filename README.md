@@ -35,7 +35,8 @@ verified there. `tests/e2e/sidebar.sh` exercises the tree on a real fixture and
 ## Requirements
 
 - Herdr 0.9.0 (protocol 22). `min_herdr_version = "0.9.0"`.
-- Rust toolchain (built with 1.81+).
+- Rust 1.81+ with `cargo`, and `git`: Herdr runs the manifest build and manages the source
+  checkout during `herdr plugin install`.
 - `just` for the developer recipes (`just test`, `just build`, `just deploy`).
 
 ## Build
@@ -45,10 +46,12 @@ just build
 # equivalent to: cargo build --locked --release --manifest-path Cargo.toml
 ```
 
-The manifest runs `./src/agent-tree`, a launcher that execs the optimized release binary
-`target/release/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
+The manifest declares `[[build]] command = ["cargo", "build", "--locked", "--release"]`.
+Herdr runs that locked build and then the tracked `./src/agent-tree` launcher, which execs the
+optimized release binary `target/release/agent-tree` (override with `AGENT_TREE_NATIVE_BIN`).
 Linking this source checkout directly, or running `scripts/deploy.sh`, is a development install
-from a checkout. The supported path for a normal user is a release install (see "Install" below).
+from a checkout. The supported path for a normal user is Herdr's managed source install (see
+"Install" below).
 
 ## Test
 
@@ -57,7 +60,7 @@ just test
 ```
 
 `scripts/check.sh` is the single authoritative gate: formatting, Clippy, Rust tests, the locked
-build, shell syntax checks, the installer and release suites, and the noninteractive isolated
+build, shell syntax checks, the clean-source install and local-stage suites, and the noninteractive isolated
 Herdr end-to-end test below. The Rust suite runs against the plugin's own logic with Rust's
 standard test harness and needs no running Herdr server, no socket and no network. It covers
 identity recomputation and self-validation, unique parent resolution and the tokenless-parent
@@ -132,56 +135,27 @@ The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` sect
 
 ## Install
 
-### Release install (the normal user path)
+### Herdr-managed source install (the normal user path)
 
-The supported install path for a normal user is a published release artifact. **No tagged
-release has been published yet**, so there is nothing to download today; this documents the
-path a user takes once the owner approves publication. The release machinery and installer are
-ready and owner-gated (see `docs/release.md`).
+The supported install path for a normal user is Herdr's own plugin lifecycle. **No tagged
+release has been published yet**, so this documents the path a user takes once the owner
+approves publication; the repository stays private until then.
 
-The release installer downloads one archive over HTTPS only, verifies a SHA-256 you pin,
-enforces a strict archive allowlist and commits an atomic versioned install. It registers the
-plugin **disabled** and never edits your Herdr configuration.
-
-A normal user does not have this checkout. Obtain the installer from the exact tagged
-repository revision and run it from a file:
+Herdr clones the tagged source revision, runs the manifest `[[build]]` command
+(`cargo build --locked --release`) in the managed checkout, and registers the plugin:
 
 ```sh
-version=0.1.0
-target=x86_64-unknown-linux-musl   # or aarch64-unknown-linux-musl
-curl --fail --location --proto '=https' --proto-redir '=https' \
-  --output install-agent-tree.sh \
-  "https://raw.githubusercontent.com/Algorant/herdr-agent-tree/v$version/scripts/release/install.sh"
-less install-agent-tree.sh
+herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0
 ```
 
-Do not pipe a download into a shell (`curl ... | sh`). Review the saved script, then run it with
-the pinned version, target and checksum:
+A normal user does not need this checkout or a prebuilt binary: Herdr runs the locked Cargo
+release build itself, so the managed machine needs the Rust toolchain (1.81+), `cargo`, `git`
+and `rustc`. Herdr stores the managed checkout under its own plugin data directory.
 
-```sh
-checksum=<sha256 from the release's agent-tree-v$version-SHA256SUMS>
-chmod 755 install-agent-tree.sh
-./install-agent-tree.sh --version "$version" --checksum "$checksum" --target "$target"
-```
+### Activate the managed install (manual)
 
-Obtain the version and lowercase SHA-256 digest through a separately trusted channel. A checksum
-copied only from the same GitHub release detects corruption but does not authenticate the
-publisher.
-
-It installs to `${XDG_DATA_HOME:-$HOME/.local/share}/herdr-agent-tree/<version>/<target>`
-(`--prefix DIR` overrides it). This path is separate from the development stage below. The
-archive is `agent-tree-v<version>-<target>.tar.gz` under
-`https://github.com/Algorant/herdr-agent-tree/releases/download/v<version>/`. `--target` is
-optional on Linux and detects `x86_64` or `aarch64`; `--herdr PATH` / `HERDR_BIN_PATH` selects
-Herdr and `--no-link` skips registration.
-
-### Activate a release install (manual)
-
-The installer deliberately leaves activation to you; it never writes `config.toml` or enables
-the plugin. After it installs and links the plugin:
-
-1. Add the sidebar rows block from "Agents row configuration" below.
-2. Enable, reload and apply:
+Herdr registers the plugin; activation is still explicit. Add the sidebar rows block from
+"Agents row configuration" below, then enable, reload and apply:
 
 ```sh
 herdr plugin enable agent-tree
@@ -189,23 +163,21 @@ herdr server reload-config
 herdr plugin action invoke agent-tree.apply
 ```
 
-Without the rows block, the plugin's decoration has no cell to render into. `plugin link`
-registers the plugin; the startup hook runs on the next **server start**, not on link or
-enable, which is why the explicit `apply` is part of activation.
+Without the rows block, the plugin's decoration has no cell to render into. The startup hook
+runs on the next **server start**, not on install or enable, which is why the explicit `apply`
+is part of activation.
 
 ### Update
 
-Download and review the new tag's installer (as above), then re-run it with the new version and
-checksum:
+Reinstall from the new tag; Herdr replaces the managed source checkout and reruns the build:
 
 ```sh
-./install-agent-tree.sh --version 0.2.0 --checksum <sha256> --target x86_64-unknown-linux-musl
+herdr plugin install Algorant/herdr-agent-tree --ref v0.2.0
 ```
 
-Versions install side by side under the same prefix, and the installer never overwrites an
-existing `<version>/<target>`. Point `herdr plugin link` at the new directory (the installer
-does this when Herdr is found) and remove the old one when you are satisfied. There is no
-`latest` and no current-version symlink: every install is an explicit version.
+There is no separate `herdr plugin update` in plugin v1, no `latest`, and no side-by-side
+version directory: the tag you name is the version you run. Remove the plugin with
+`herdr plugin uninstall agent-tree`.
 
 ### Development install from a checkout
 
@@ -271,11 +243,10 @@ does not affect it. Re-run `just deploy` to rebuild, restage and replace the liv
 The staging directory is local hidden state, so this is not the documented path for a normal
 user.
 
-This loop is not the same as the other two paths. A normal user installs a published release
-with `scripts/release/install.sh`, which verifies a caller-pinned checksum, never edits
-`config.toml`, and registers the plugin **disabled** by default. `scripts/stage-local.sh` is
-inert local staging: it writes a complete plugin root under the Cargo target directory and
-never links it or touches user state.
+These local loops are not the normal install path. A normal user installs from source with
+`herdr plugin install Algorant/herdr-agent-tree --ref <tag>`, which lets Herdr clone, build and
+register the plugin. `scripts/stage-local.sh` is inert local staging: it writes a complete
+plugin root under the Cargo target directory and never links it or touches user state.
 
 An install made earlier with `herdr plugin link <repo>/. --enabled` registered the source
 checkout; running `just deploy` relinks it to the staged root. If a subscriber started from

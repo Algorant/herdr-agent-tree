@@ -1,7 +1,0 @@
-# Owner-controlled final publication targets.
-# Format: RUST_TARGET|TRACKED_NATIVE_EVIDENCE_PATH|OWNER_APPROVER
-#
-# This file intentionally has no entries. Candidate CI still builds and tests both musl
-# targets, but final promotion stays closed until a version-bound native evidence file in
-# docs/release-evidence/ passes human review and the owner approves it in the same reviewed
-# release commit. Publication (tagging and releasing) is not performed by this work.
