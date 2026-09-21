@@ -87,3 +87,8 @@
 {"ts":"2026-09-20T19:54:26Z","event":"accord.claimed","id":"task-16","summary":"Accord claim for task-16","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":87}
 {"ts":"2026-09-20T20:52:31Z","event":"accord.delivered","id":"task-16","summary":"Accord deliver for task-16","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":88}
 {"ts":"2026-09-20T20:52:34Z","event":"task.completed","id":"task-16","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":89}
+{"ts":"2026-09-21T01:35:42Z","event":"decision.created","id":"decision-3","summary":"Use Herdr-managed source builds as the sole public install path","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":90}
+{"ts":"2026-09-21T01:35:55Z","event":"task.created","id":"task-8-1","summary":"Converge v0.1.0 on Herdr-managed source installation","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":91}
+{"ts":"2026-09-21T01:36:17Z","event":"task.canceled","id":"task-7","summary":"Canceled: Superseded before work began by Algorant's decision-3 to use Herdr-managed source builds as the sole public install path. The original archive/digest/native-target evidence contract no longer applies; replacement dogfood work will validate the exact managed source install under task-8.","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":92}
+{"ts":"2026-09-21T01:36:26Z","event":"task.created","id":"task-8-2","summary":"Dogfood the exact v0.1.0 Herdr-managed source install","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":93}
+{"ts":"2026-09-21T01:36:45Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: tags, blockers, references, relatedFiles, acceptance, constraints, validation, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":94}
