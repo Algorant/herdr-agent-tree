@@ -110,3 +110,11 @@
 {"ts":"2026-09-21T04:22:24Z","event":"accord.delivered","id":"task-17","summary":"Accord deliver for task-17","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":110}
 {"ts":"2026-09-21T04:22:28Z","event":"task.completed","id":"task-17","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":111}
 {"ts":"2026-09-21T04:22:35Z","event":"accord.resumed","id":"task-8-2","summary":"Accord resume for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":112}
+{"ts":"2026-09-21T15:51:00Z","event":"task.created","id":"task-18","summary":"Spike Agent focus view loss and missing live Worker relationships","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":113}
+{"ts":"2026-09-21T15:51:08Z","event":"task.updated","id":"task-8-2","summary":"Updated task-8-2 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":114}
+{"ts":"2026-09-21T15:51:15Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":115}
+{"ts":"2026-09-21T15:51:27Z","event":"accord.claimed","id":"task-18","summary":"Accord claim for task-18","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":116}
+{"ts":"2026-09-21T16:09:33Z","event":"accord.released","id":"task-18","summary":"Accord release for task-18","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":117,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-21T16:09:37Z","event":"accord.claimed","id":"task-18","summary":"Accord claim for task-18","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":118}
+{"ts":"2026-09-21T16:09:51Z","event":"accord.delivered","id":"task-18","summary":"Accord deliver for task-18","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":119}
+{"ts":"2026-09-21T16:09:56Z","event":"task.completed","id":"task-18","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":120}
