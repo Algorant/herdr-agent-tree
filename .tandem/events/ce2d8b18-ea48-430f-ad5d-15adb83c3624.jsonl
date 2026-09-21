@@ -100,3 +100,13 @@
 {"ts":"2026-09-21T02:44:15Z","event":"accord.delivered","id":"task-8-1","summary":"Accord deliver for task-8-1","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":100}
 {"ts":"2026-09-21T02:44:20Z","event":"task.completed","id":"task-8-1","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":101}
 {"ts":"2026-09-21T02:44:25Z","event":"accord.released","id":"task-8","summary":"Accord release for task-8","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":102,"data":{"disposition":"reassign"}}
+{"ts":"2026-09-21T02:45:15Z","event":"accord.claimed","id":"task-8-2","summary":"Accord claim for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":103}
+{"ts":"2026-09-21T04:12:45Z","event":"task.created","id":"task-17","summary":"Spike dynamic tree re-latch after relationships appear in native mode","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":104}
+{"ts":"2026-09-21T04:12:49Z","event":"task.updated","id":"task-8-2","summary":"Updated task-8-2 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":105}
+{"ts":"2026-09-21T04:12:53Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":106}
+{"ts":"2026-09-21T04:13:03Z","event":"accord.claimed","id":"task-17","summary":"Accord claim for task-17","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":107}
+{"ts":"2026-09-21T04:22:09Z","event":"accord.released","id":"task-17","summary":"Accord release for task-17","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":108,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-21T04:22:17Z","event":"accord.claimed","id":"task-17","summary":"Accord claim for task-17","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":109}
+{"ts":"2026-09-21T04:22:24Z","event":"accord.delivered","id":"task-17","summary":"Accord deliver for task-17","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":110}
+{"ts":"2026-09-21T04:22:28Z","event":"task.completed","id":"task-17","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":111}
+{"ts":"2026-09-21T04:22:35Z","event":"accord.resumed","id":"task-8-2","summary":"Accord resume for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":112}
