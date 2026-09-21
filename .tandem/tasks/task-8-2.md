@@ -11,15 +11,14 @@ references: ["decision-3", "task-7"]
 relatedFiles: ["herdr-plugin.toml", "README.md", "docs/release.md"]
 tags: ["dogfood", "release", "validation", "herdr-plugin-install"]
 accord:
-  status: "blocked"
+  status: "claimed"
   acceptance: ["A clean Herdr-managed install from the exact reviewed candidate ref runs the manifest `[[build]]` command successfully, registers `agent-tree`, and executes the built binary from the managed plugin checkout without relying on a pre-existing `target/` directory.", "The managed install exposes the declared apply/reload/clear/toggle actions, can be enabled and activated using the documented steps, and the doctor reports a healthy subscriber and canonical `prefix+t` shortcut/config state.", "Real top-level, Worker, Subagent and Worker-owned Subagent relationships are observed during normal use, including ordering, exit cleanup and tree/native toggle behavior, with no critical identity, recovery, lifecycle or sidebar regression.", "The installed plugin source ref/commit, Herdr version, Rust version, build result, registration source, running executable/hash and observed lifecycle/sidebar results are captured as Task evidence.", "Algorant explicitly reviews and approves the exact managed-install dogfood result before task-8 may make the repository public or create the v0.1.0 tag."]
   claimedAt: "2026-09-21T02:45:15Z"
   validation: ["$ git diff --check", "$ just test", "$ just build"]
   constraints: ["Do not make the repository public, create or push a tag, or publish a release during dogfood.", "Do not claim owner approval on Algorant's behalf; record explicit approval only after presenting the exact managed-install evidence.", "Use the Herdr-managed source install from decision-3; do not use the removed archive installer, a development stage, or a checkout link as release evidence.", "Do not restart or disturb unrelated Herdr panes while transitioning the live plugin."]
-  note: "Release dogfood paused for task-18: Agent-row focus appears to drop the plugin-owned tree view to grouped, and live herdr-notifs-plus children appeared without relationship decoration. Establish focus/view scope and real publisher tokens before approval."
-  updatedAt: "2026-09-21T15:51:15Z"
+  updatedAt: "2026-09-21T18:09:06Z"
 createdAt: "2026-09-21T01:36:26Z"
-updatedAt: "2026-09-21T15:51:15Z"
+updatedAt: "2026-09-21T18:09:06Z"
 assignee: "orchestrator"
 ---
 
