@@ -92,3 +92,11 @@
 {"ts":"2026-09-21T01:36:17Z","event":"task.canceled","id":"task-7","summary":"Canceled: Superseded before work began by Algorant's decision-3 to use Herdr-managed source builds as the sole public install path. The original archive/digest/native-target evidence contract no longer applies; replacement dogfood work will validate the exact managed source install under task-8.","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":92}
 {"ts":"2026-09-21T01:36:26Z","event":"task.created","id":"task-8-2","summary":"Dogfood the exact v0.1.0 Herdr-managed source install","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":93}
 {"ts":"2026-09-21T01:36:45Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: tags, blockers, references, relatedFiles, acceptance, constraints, validation, body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":94}
+{"ts":"2026-09-21T02:17:56Z","event":"accord.claimed","id":"task-8","summary":"Accord claim for task-8","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":95}
+{"ts":"2026-09-21T02:35:25Z","event":"task.updated","id":"task-8-1","summary":"Updated task-8-1 metadata: acceptance","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":96}
+{"ts":"2026-09-21T02:35:37Z","event":"accord.delivered","id":"task-8","summary":"Accord deliver for task-8","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":97}
+{"ts":"2026-09-21T02:35:37Z","event":"accord.rework","id":"task-8","summary":"Accord rework for task-8","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":98}
+{"ts":"2026-09-21T02:44:02Z","event":"accord.claimed","id":"task-8-1","summary":"Accord claim for task-8-1","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":99}
+{"ts":"2026-09-21T02:44:15Z","event":"accord.delivered","id":"task-8-1","summary":"Accord deliver for task-8-1","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":100}
+{"ts":"2026-09-21T02:44:20Z","event":"task.completed","id":"task-8-1","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":101}
+{"ts":"2026-09-21T02:44:25Z","event":"accord.released","id":"task-8","summary":"Accord release for task-8","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":102,"data":{"disposition":"reassign"}}
