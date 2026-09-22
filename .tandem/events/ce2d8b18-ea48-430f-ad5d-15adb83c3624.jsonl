@@ -122,3 +122,5 @@
 {"ts":"2026-09-21T18:16:03Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":122}
 {"ts":"2026-09-22T00:31:46Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":123}
 {"ts":"2026-09-22T01:01:56Z","event":"task.created","id":"task-19","summary":"Polish the Herdr plugin install preview","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":124}
+{"ts":"2026-09-22T01:05:03Z","event":"task.created","id":"task-20","summary":"Make doctor verify Herdr-managed source-install executables correctly","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":125}
+{"ts":"2026-09-22T01:05:12Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":126}

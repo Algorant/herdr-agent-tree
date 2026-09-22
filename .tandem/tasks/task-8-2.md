@@ -16,10 +16,10 @@ accord:
   claimedAt: "2026-09-21T02:45:15Z"
   validation: ["$ git diff --check", "$ just test", "$ just build"]
   constraints: ["Do not make the repository public, create or push a tag, or publish a release during dogfood.", "Do not claim owner approval on Algorant's behalf; record explicit approval only after presenting the exact managed-install evidence.", "Use the Herdr-managed source install from decision-3; do not use the removed archive installer, a development stage, or a checkout link as release evidence.", "Do not restart or disturb unrelated Herdr panes while transitioning the live plugin."]
-  note: "Live cross-endpoint capture resolved the current herdr-notifs-plus symptom. Desktop endpoint is healthy with Agent Tree 0.1.0 and one subscriber; laptop endpoint has no Agent Tree registration, no staged binary, and zero subscribers, so its rows cannot receive Agent Tree rank/row metadata and endpoint selection can expose a different native view. The current laptop child herdr-plugin-ecosystem also has no role/agency_self/agency_parent tokens because its managed Subagent startup failed on a stale extension path in the already-running root session and it was manually restarted with `herdr agent start`, bypassing pi-agency publication. Next evidence must install/activate Agent Tree on laptop through an approved path, start fresh managed Subagent and Worker children from a current Pi session, and compare both endpoints before release approval."
-  updatedAt: "2026-09-22T00:31:46Z"
+  note: "The standard managed install is now present and active on laptop, but the currently visible task-16 Worker cannot rank because it was launched about 70 seconds before plugin installation by a long-running, stale herdr-notifs-plus Pi session. Live `agent list` shows `role=worker` and task/worktree tokens but no `agency_self` or `agency_parent`; Agent Tree therefore correctly leaves it unlinked. The laptop subscriber is running from the managed checkout's `target/release/agent-tree`. Doctor falsely compares that executable to the source launcher `src/agent-tree`; task-20 tracks this release-blocking doctor defect. Resume dogfood after the parent Pi session is reloaded and a fresh managed Worker/Subagent publishes complete relationships."
+  updatedAt: "2026-09-22T01:05:12Z"
 createdAt: "2026-09-21T01:36:26Z"
-updatedAt: "2026-09-22T00:31:46Z"
+updatedAt: "2026-09-22T01:05:12Z"
 assignee: "orchestrator"
 ---
 
