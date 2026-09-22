@@ -16,10 +16,10 @@ accord:
   claimedAt: "2026-09-21T02:45:15Z"
   validation: ["$ git diff --check", "$ just test", "$ just build"]
   constraints: ["Do not make the repository public, create or push a tag, or publish a release during dogfood.", "Do not claim owner approval on Algorant's behalf; record explicit approval only after presenting the exact managed-install evidence.", "Use the Herdr-managed source install from decision-3; do not use the removed archive installer, a development stage, or a checkout link as release evidence.", "Do not restart or disturb unrelated Herdr panes while transitioning the live plugin."]
-  note: "Exact user-reported incident remains unresolved: task-236 traced a different direct-peer prompt and did not establish how the visible bridge-boundary/repo-rewrite-map rows were launched; those panes exited before their tokens/spawn records were captured. Do not approve release until a recurrence is captured live or the exact historical launch is proven."
-  updatedAt: "2026-09-21T18:16:03Z"
+  note: "Live cross-endpoint capture resolved the current herdr-notifs-plus symptom. Desktop endpoint is healthy with Agent Tree 0.1.0 and one subscriber; laptop endpoint has no Agent Tree registration, no staged binary, and zero subscribers, so its rows cannot receive Agent Tree rank/row metadata and endpoint selection can expose a different native view. The current laptop child herdr-plugin-ecosystem also has no role/agency_self/agency_parent tokens because its managed Subagent startup failed on a stale extension path in the already-running root session and it was manually restarted with `herdr agent start`, bypassing pi-agency publication. Next evidence must install/activate Agent Tree on laptop through an approved path, start fresh managed Subagent and Worker children from a current Pi session, and compare both endpoints before release approval."
+  updatedAt: "2026-09-22T00:31:46Z"
 createdAt: "2026-09-21T01:36:26Z"
-updatedAt: "2026-09-21T18:16:03Z"
+updatedAt: "2026-09-22T00:31:46Z"
 assignee: "orchestrator"
 ---
 
