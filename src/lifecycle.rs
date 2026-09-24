@@ -170,11 +170,9 @@ fn proc_cmdline(pid: i32) -> Option<Vec<String>> {
     }
 }
 
-/// The kernel appends `" (deleted)"` once an executable is unlinked. `scripts/deploy.sh`
-/// atomically replaces the stage directory by renaming it to a `.stage-old.*` sibling and
-/// then deleting it, so a still-running subscriber's `/proc/<pid>/exe` is exactly that old
-/// sibling path with the suffix. Normalizing the suffix away is what lets the replacement
-/// verify the process it is about to signal instead of mistaking it for a foreign one.
+/// The kernel appends `" (deleted)"` once an executable is unlinked. Development deploys
+/// move the stage to `.stage-old.*`; Herdr-managed reinstalls move the old checkout to
+/// `plugins/.tmp-install-*/previous-checkout`. Normalize the suffix to verify the holder.
 fn proc_exe(pid: i32) -> Option<PathBuf> {
     let raw = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
     let text = raw.to_string_lossy();
@@ -205,14 +203,8 @@ fn refuse(pid: i32, why: &str) -> String {
     )
 }
 
-/// True when a normalized `/proc/<pid>/exe` path is one of this plugin's own binaries.
-///
-/// The trusted set is derived only from the running reload executable, never from a holder's
-/// self-reported environment: a same-user process can set `HERDR_PLUGIN_ROOT` to anything.
-/// The reload executable's own staged root is trusted directly, and an atomically replaced
-/// stage is trusted through its exact `.stage-old.*` sibling under the same prefix (the path
-/// a still-running subscriber's `(deleted)` link names after `deploy.sh` renames and deletes
-/// the previous stage).
+/// The trusted set is derived from the running executable, not the lock holder's environment.
+/// Only the current image or the exact former path for its install type is accepted.
 fn trusted_binary(exe: &Path) -> bool {
     std::env::current_exe()
         .map(|current| trusted_binary_for(&current, exe))
@@ -220,21 +212,74 @@ fn trusted_binary(exe: &Path) -> bool {
 }
 
 fn trusted_binary_for(current: &Path, exe: &Path) -> bool {
-    if !exe.file_name().is_some_and(|name| name == "agent-tree") {
-        return false;
-    }
     if exe == current {
         return true;
     }
-    let Some(stage_root) = current.parent().and_then(Path::parent) else {
+    let Some(binary_dir) = current.parent() else {
         return false;
     };
-    if exe.starts_with(stage_root) {
-        return true;
+    if binary_dir.file_name().is_some_and(|name| name == "src") {
+        let Some(root) = binary_dir.parent() else {
+            return false;
+        };
+        return root
+            .parent()
+            .is_some_and(|prefix| is_replaced_stage(exe, prefix));
     }
-    stage_root
-        .parent()
-        .is_some_and(|prefix| is_replaced_stage(exe, prefix))
+    if binary_dir.file_name().is_some_and(|name| name == "release") {
+        let Some(target) = binary_dir.parent() else {
+            return false;
+        };
+        if !target.file_name().is_some_and(|name| name == "target") {
+            return false;
+        }
+        let Some(root) = target.parent() else {
+            return false;
+        };
+        let Some(github) = root.parent() else {
+            return false;
+        };
+        if !github.file_name().is_some_and(|name| name == "github")
+            || !root
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("agent-tree-"))
+        {
+            return false;
+        }
+        return github
+            .parent()
+            .is_some_and(|plugins| is_previous_checkout(exe, plugins));
+    }
+    false
+}
+
+/// Herdr moves its former source checkout under the plugin registry on reinstall.
+/// Match every component, not a loose prefix or a holder's self-reported root.
+fn is_previous_checkout(exe: &Path, plugins: &Path) -> bool {
+    let Ok(relative) = exe.strip_prefix(plugins) else {
+        return false;
+    };
+    let parts: Vec<_> = relative.components().collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    let Some(first) = parts[0].as_os_str().to_str() else {
+        return false;
+    };
+    let Some(install_id) = first.strip_prefix(".tmp-install-") else {
+        return false;
+    };
+    let Some((pid, timestamp)) = install_id.split_once('-') else {
+        return false;
+    };
+    !pid.is_empty()
+        && !timestamp.is_empty()
+        && pid.bytes().all(|byte| byte.is_ascii_digit())
+        && timestamp.bytes().all(|byte| byte.is_ascii_digit())
+        && parts[1].as_os_str() == "previous-checkout"
+        && parts[2].as_os_str() == "target"
+        && parts[3].as_os_str() == "release"
+        && parts[4].as_os_str() == "agent-tree"
 }
 
 /// True when `exe` sits under `base` inside a `.stage-old.*` directory, the sibling of a
@@ -243,17 +288,18 @@ fn is_replaced_stage(exe: &Path, base: &Path) -> bool {
     let Ok(relative) = exe.strip_prefix(base) else {
         return false;
     };
-    matches!(
-        relative.components().next(),
-        Some(std::path::Component::Normal(first))
-            if first.to_string_lossy().starts_with(".stage-old.")
-    )
+    let parts: Vec<_> = relative.components().collect();
+    parts.len() == 3
+        && matches!(parts[0], std::path::Component::Normal(first)
+            if first.to_string_lossy().starts_with(".stage-old."))
+        && parts[1].as_os_str() == "src"
+        && parts[2].as_os_str() == "agent-tree"
 }
 
 /// Confirms a live lock holder is this plugin's own subscriber for this socket before any
 /// signal is sent. Every signal is required to agree: same UID, the plugin id, socket and
 /// state directory in the process environment, `agent-tree subscriber` argv, and a
-/// normalized executable path inside the plugin's own staged install paths.
+/// normalized executable path inside the plugin's own current or replaced install path.
 fn verify_holder(pid: i32, dir: &Path, socket: &str) -> R<()> {
     let Some(uid) = proc_uid(pid) else {
         return Err(refuse(pid, "its /proc ownership cannot be read"));
@@ -331,7 +377,7 @@ fn verify_holder(pid: i32, dir: &Path, socket: &str) -> R<()> {
         return Err(refuse(
             pid,
             &format!(
-                "its executable {} is outside this plugin's own staged install paths",
+                "its executable {} is outside this plugin's own current or replaced install paths",
                 exe.display()
             ),
         ));
@@ -847,7 +893,7 @@ mod tests {
             trusted_binary_for(&current, &replaced),
             "the (deleted) sibling of an atomically replaced stage still belongs to the plugin"
         );
-        assert!(trusted_binary_for(
+        assert!(!trusted_binary_for(
             &current,
             &prefix.join("stage/other/agent-tree")
         ));
@@ -863,6 +909,29 @@ mod tests {
         assert!(!trusted_binary_for(
             &current,
             Path::new("/home/user/.local/share/herdr-agent-tree/other/stage/src/agent-tree")
+        ));
+    }
+
+    #[test]
+    fn managed_reinstall_trusts_only_herdrs_exact_previous_checkout() {
+        let plugins = Path::new("/home/user/.config/herdr/plugins");
+        let current = plugins.join("github/agent-tree-9f47ef88dfe0/target/release/agent-tree");
+        let previous = plugins
+            .join(".tmp-install-1389129-1790259993793/previous-checkout/target/release/agent-tree");
+        assert!(trusted_binary_for(&current, &current));
+        assert!(trusted_binary_for(&current, &previous));
+        for path in [
+            plugins.join(".tmp-install-1389129-1790259993793/previous-checkout/src/agent-tree"),
+            plugins.join(".tmp-install-1389129-1790259993793/other/target/release/agent-tree"),
+            plugins.join(".tmp-install-foo-1790259993793/previous-checkout/target/release/agent-tree"),
+            plugins.join(".tmp-install-1389129-1790259993793/previous-checkout/target/release/other/agent-tree"),
+            plugins.join("other/.tmp-install-1389129-1790259993793/previous-checkout/target/release/agent-tree"),
+        ] {
+            assert!(!trusted_binary_for(&current, &path), "accepted {}", path.display());
+        }
+        assert!(!trusted_binary_for(
+            Path::new("/tmp/agent-tree/target/release/agent-tree"),
+            &previous
         ));
     }
 

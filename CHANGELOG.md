@@ -63,6 +63,11 @@ semantic versioning after its first public release.
 
 ### Fixed
 
+- A Herdr-managed reinstall now allows `agent-tree.reload` to replace its own verified
+  subscriber after Herdr moves the previous source checkout to its temporary
+  `previous-checkout` location; unrelated or unverifiable holders remain untouched. The
+  endpoint doctor checks the managed `target/release/agent-tree` executable rather than the
+  `src/agent-tree` launcher and verifies both executable path and hash.
 - The documented toggle shortcut is now `prefix+t` (press `Ctrl+B`, release, then `t`) instead
   of `prefix+alt+t`. `prefix+alt+t` only fires when the terminal reports Alt/Meta, so it was
   silently dropped in terminals that do not. The endpoint deploy and doctor now inspect,

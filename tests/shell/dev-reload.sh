@@ -421,5 +421,69 @@ grep -q 'refusing' "$SANDBOX/err7" || fail 'deploy did not explain the refusal'
 grep -qF "$FOREIGN" "$SANDBOX/err7" || fail 'deploy did not name the refused pid'
 grep -q 'phase: reload action' "$SANDBOX/err7" || fail 'deploy did not name the failed phase (reload action)'
 pass 'a foreign lock holder fails clearly and is never signaled'
+kill "$FOREIGN" 2>/dev/null || true
+wait_dead "$FOREIGN" || fail 'foreign fixture did not exit'
+FOREIGN=
+rm -f "$LOCK"
+
+# Herdr moves the prior GitHub checkout into a temporary previous-checkout before
+# deleting it. A verified subscriber from that path must be replaced, not orphaned.
+printf '== managed source reinstall\n'
+PLUGINS=$CONFIG/herdr/plugins
+MANAGED=$PLUGINS/github/agent-tree-fixture
+OLD=$PLUGINS/.tmp-install-123-456/previous-checkout
+mkdir -p "$MANAGED/target/release" "$(dirname "$OLD")"
+cp "$PREBUILT" "$MANAGED/target/release/agent-tree"
+env HERDR_PLUGIN_ID=agent-tree HERDR_PLUGIN_ROOT="$MANAGED" \
+    HERDR_PLUGIN_STATE_DIR="$STATE" HERDR_SOCKET_PATH="$SOCKET" \
+    "$MANAGED/target/release/agent-tree" subscriber >"$SANDBOX/managed-old.log" 2>&1 &
+OLD_PID=$!
+i=0
+while [ ! -f "$LOCK" ]; do
+    i=$((i + 1)); [ "$i" -lt 100 ] || fail 'managed subscriber did not acquire lock'
+    sleep 0.1
+done
+[ "$(lock_pid "$LOCK")" = "$OLD_PID" ] || fail 'managed lock names wrong pid'
+mv "$MANAGED" "$OLD"
+rm -rf "$OLD"
+mkdir -p "$MANAGED/target/release"
+cp "$PREBUILT" "$MANAGED/target/release/agent-tree"
+[ "$(readlink /proc/$OLD_PID/exe)" = "$OLD/target/release/agent-tree (deleted)" ] \
+    || fail 'old subscriber does not occupy Herdr previous-checkout path'
+env HERDR_PLUGIN_ID=agent-tree HERDR_PLUGIN_ROOT="$MANAGED" \
+    HERDR_PLUGIN_STATE_DIR="$STATE" HERDR_SOCKET_PATH="$SOCKET" \
+    "$MANAGED/target/release/agent-tree" reload >"$SANDBOX/managed-reload.out" 2>"$SANDBOX/managed-reload.err" \
+    || { cat "$SANDBOX/managed-reload.err" >&2; fail 'managed reload refused its own previous checkout'; }
+NEW_PID=$(lock_pid "$LOCK")
+[ "$NEW_PID" != "$OLD_PID" ] || fail 'managed reload did not replace the old subscriber'
+wait_dead "$OLD_PID" || fail 'old managed subscriber is still alive'
+[ "$(readlink /proc/$NEW_PID/exe)" = "$MANAGED/target/release/agent-tree" ] \
+    || fail 'new managed subscriber is not running from the installed checkout'
+pass 'managed reinstall replaces the verified previous-checkout subscriber without a server restart'
+
+printf '== lookalike previous-checkout refusal\n'
+kill "$NEW_PID"
+wait_dead "$NEW_PID" || fail 'managed subscriber did not exit before lookalike test'
+LOOKALIKE=$PLUGINS/.tmp-install-abc-456/previous-checkout/target/release
+mkdir -p "$LOOKALIKE"
+cp "$PREBUILT" "$LOOKALIKE/agent-tree"
+env HERDR_PLUGIN_ID=agent-tree HERDR_PLUGIN_ROOT="$MANAGED" \
+    HERDR_PLUGIN_STATE_DIR="$STATE" HERDR_SOCKET_PATH="$SOCKET" \
+    "$LOOKALIKE/agent-tree" subscriber >"$SANDBOX/lookalike.log" 2>&1 &
+FOREIGN=$!
+i=0
+while [ ! -f "$LOCK" ]; do
+    i=$((i + 1)); [ "$i" -lt 100 ] || fail 'lookalike did not acquire lock'
+    sleep 0.1
+done
+if env HERDR_PLUGIN_ID=agent-tree HERDR_PLUGIN_ROOT="$MANAGED" \
+    HERDR_PLUGIN_STATE_DIR="$STATE" HERDR_SOCKET_PATH="$SOCKET" \
+    "$MANAGED/target/release/agent-tree" reload >"$SANDBOX/lookalike.out" 2>"$SANDBOX/lookalike.err"; then
+    fail 'managed reload accepted a lookalike previous-checkout executable'
+fi
+kill -0 "$FOREIGN" 2>/dev/null || fail 'managed reload signaled the lookalike holder'
+[ "$(lock_pid "$LOCK")" = "$FOREIGN" ] || fail 'managed reload altered the lookalike lock'
+grep -q 'refusing to signal' "$SANDBOX/lookalike.err" || fail 'lookalike refusal was not explained'
+pass 'lookalike previous-checkout path and spoofed environment cannot signal a foreign holder'
 
 printf '1..%d\n' "$PASS"
