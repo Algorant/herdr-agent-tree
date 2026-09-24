@@ -133,3 +133,11 @@
 {"ts":"2026-09-24T14:28:12Z","event":"task.updated","id":"task-8-2","summary":"Updated task-8-2 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":133}
 {"ts":"2026-09-24T14:28:16Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":134}
 {"ts":"2026-09-24T14:28:19Z","event":"accord.claimed","id":"task-21","summary":"Accord claim for task-21","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":135}
+{"ts":"2026-09-24T14:37:02Z","event":"accord.delivered","id":"task-21","summary":"Accord deliver for task-21","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":136}
+{"ts":"2026-09-24T14:37:07Z","event":"task.completed","id":"task-21","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":137}
+{"ts":"2026-09-24T14:37:11Z","event":"accord.resumed","id":"task-8-2","summary":"Accord resume for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":138}
+{"ts":"2026-09-24T14:38:20Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":139}
+{"ts":"2026-09-24T15:53:12Z","event":"accord.resumed","id":"task-8-2","summary":"Accord resume for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":140}
+{"ts":"2026-09-24T15:53:28Z","event":"accord.delivered","id":"task-8-2","summary":"Accord deliver for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":141}
+{"ts":"2026-09-24T16:01:21Z","event":"task.completed","id":"task-8-2","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":142}
+{"ts":"2026-09-24T16:02:23Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: body","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":143}

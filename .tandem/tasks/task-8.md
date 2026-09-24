@@ -21,7 +21,9 @@ accord:
   note: "Integrated and accepted the task-8-1 source-install convergence. Parent publication remains open and must not complete until task-8-2 dogfoods the exact Herdr-managed install and Algorant explicitly approves publication."
   updatedAt: "2026-09-21T02:44:25Z"
 createdAt: "2026-09-16T12:39:34Z"
-updatedAt: "2026-09-21T02:44:25Z"
+updatedAt: "2026-09-24T16:02:23Z"
 references: ["decision-3"]
 ---
-Publish v0.1.0 through Herdr's native plugin lifecycle after the source-build install contract and its exact managed-install dogfood are complete and Algorant explicitly approves release. The sole normal-user path is `herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0`; the tag workflow publishes the immutable reviewed source release rather than custom binary archives. At the final public boundary, remove internal `.tandem` coordination metadata, make the repository public, create the exact tag, verify hosted CI/release completion, confirm marketplace discovery prerequisites, and perform a clean anonymous Herdr-managed installation.
+Publish v0.1.0 through Herdr's native plugin lifecycle after the source-build install contract and its exact managed-install dogfood are complete and Algorant explicitly approves release. The sole normal-user path is `herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0`; the tag workflow publishes the immutable reviewed source release rather than custom binary archives. At the final public boundary, remove internal `.tandem` coordination metadata from the release tree and ignore it in future commits, make the repository public, create the exact tag, verify hosted CI/release completion, confirm marketplace discovery prerequisites, and perform a clean anonymous Herdr-managed installation.
+
+Algorant reviewed the exact cb630ad managed-install dogfood (including real Pi delegation tree, toggle, safe managed reinstall/reload, cleanup, healthy doctor and hosted CI) and explicitly approved public v0.1.0 publication on 2026-09-24. Algorant accepts that historical `.tandem` commits remain visible after `.tandem/` is removed from the release tip and added to `.gitignore`.
