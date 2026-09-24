@@ -10,15 +10,16 @@ Herdr clones that source revision, runs the manifest `[[build]]` command, regist
 plugin and manages the checkout. There are no downloadable binary archives, checksum files,
 target allowlists or native-evidence files, and this repository publishes none.
 
-No tagged release has been published yet, the repository is still private, and publication is
-owner-gated. This document describes the contract the final publication sequence must satisfy;
-it does not perform it.
+v0.1.0 is the first public source release. The release tag identifies the reviewed source
+revision; Herdr builds the optimized native executable on the installing machine. Git history
+contains earlier internal `.tandem` coordination records; the release tree removes and ignores
+`.tandem/` for subsequent commits.
 
 ## Version gate
 
 `herdr-plugin.toml` and `Cargo.toml` must carry the same three-component version, and
-`CHANGELOG.md` must have an exact `## [<version>] - planned` heading (a dated heading is
-accepted once the release is published). `scripts/release/check-release.sh` enforces both and,
+`CHANGELOG.md` must have an exact dated `## [<version>] - YYYY-MM-DD` heading (the
+pre-release gate also accepts `planned`). `scripts/release/check-release.sh` enforces both and,
 when run for a tag, requires the exact `refs/tags/v<version>` ref:
 
 ```sh
@@ -86,17 +87,17 @@ whose default branch contains a parseable `herdr-plugin.toml`. This repository a
 root manifest with the required `id`, `name`, `version`, `min_herdr_version` and `platforms`;
 publication must add the topic and make the repository public.
 
-## Owner-gated publication sequence
+## Release verification
 
-Publication happens only after the task-8-2 managed-install dogfood and Algorant's explicit
-approval of that exact result:
+The v0.1.0 candidate was installed from its exact Git commit through Herdr's managed source
+lifecycle on Linux/Herdr 0.9.1, built with the locked Cargo manifest command, and exercised
+with live Pi root, Worker, root-owned Subagent and Worker-owned Subagent relationships. A
+managed reinstall replaced its verified previous subscriber, and the doctor reported one
+matching executable, working `prefix+t` toggle and configured sidebar row. The full local
+quality gate and hosted CI passed on the reviewed candidate. The final tag workflow validates
+the release ref and clean-source build before publishing the source release.
 
-1. Remove the internal `.tandem` coordination metadata in the final reviewed release commit.
-2. Make `Algorant/herdr-agent-tree` public and add the `herdr-plugin` topic.
-3. Create the immutable `v0.1.0` tag on the reviewed release commit.
-4. Confirm the hosted CI and tag-workflow runs complete successfully.
-5. Verify a clean anonymous `herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0` on a
-   machine with no prior checkout or `target/` directory.
-
-Nothing in this repository makes the repository public, creates a tag or publishes a release
-outside that approved sequence.
+For a new machine, install from the tag above, add the rows configuration from the README,
+then activate it with `herdr plugin enable agent-tree`, `herdr server reload-config` and
+`herdr plugin action invoke agent-tree.apply`. Reinstall from a newer tag to update; this
+release does not provide binary archives or a separate `plugin update` command.

@@ -8,13 +8,10 @@ including across tabs and workspaces.
 It is an external Herdr plugin. It never changes Pi, never writes Pi-owned metadata, and
 never touches panes it cannot validate.
 
-Status: MVP. Rendering, ordering, identity validation and lifecycle were observed in an
-isolated Herdr 0.9.0 server (see "Verified behavior" below). The plugin has also been
-installed and enabled on Algorant's live Herdr server since 2026-09-15, from the staged
-release root that `scripts/deploy.sh` produces; the tree and the owner-safe toggle were
-verified there. `tests/e2e/sidebar.sh` exercises the tree on a real fixture and
-`tests/e2e/toggle.sh` exercises the shortcut toggle, both in a throwaway instance (see
-"End-to-end test").
+Status: v0.1.0 source release for Linux and Herdr 0.9.0+. The Herdr-managed GitHub install
+was dogfooded on Herdr 0.9.1 with a real Pi root, Worker and Subagents, including managed
+reinstall, tree/native toggle and cleanup. The isolated `tests/e2e/sidebar.sh` and
+`tests/e2e/toggle.sh` also exercise the tree and shortcut (see "End-to-end test").
 
 ## How it works
 
@@ -137,9 +134,8 @@ The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` sect
 
 ### Herdr-managed source install (the normal user path)
 
-The supported install path for a normal user is Herdr's own plugin lifecycle. **No tagged
-release has been published yet**, so this documents the path a user takes once the owner
-approves publication; the repository stays private until then.
+The supported install path for a normal user is Herdr's own plugin lifecycle. Install the
+published v0.1.0 source release from GitHub:
 
 Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 (`cargo build --locked --release`) in the managed checkout, and registers the plugin:

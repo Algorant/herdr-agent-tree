@@ -2,9 +2,11 @@
 
 All notable changes will be documented in this file. This project uses
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) structure and intends to use
-semantic versioning after its first public release.
+semantic versioning.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-09-24
 
 ### Added
 
@@ -30,7 +32,7 @@ semantic versioning after its first public release.
 - CI running the shared `scripts/check.sh` quality gate (formatting, Clippy, `cargo
   build --locked`, `cargo test --locked`, and the hermetic source-install, local-stage and
   endpoint suites), with a tag workflow that validates and publishes the immutable source
-  release. No tag or release has been published yet.
+  source release.
 
 ### Changed
 
@@ -106,19 +108,6 @@ semantic versioning after its first public release.
   managed shortcut is shell-quoted and then TOML-encoded so a Herdr path with spaces or quotes
   still parses; uninstall is transactional with a full preflight and automatic restore; and
   the deployment lock is removed only when its owner token still matches.
-
-## [0.1.0] - planned
-
-### Added
-
-- Pi delegation tree projection into Herdr's native Agents sidebar: `agent_tree_row` and
-  `agent_tree_rank` pane tokens and one `agent.view.set` projection.
-- Recomputed identity validation, unique parent resolution, preorder rank ordering and the
-  20-character decoration grammar.
-- Lifecycle actions `start`, `apply`, `clear` and `toggle`, with a socket-scoped tree-off
-  marker and a single-instance subscriber lock. The plugin writes no configuration.
-- Isolated Herdr end-to-end sidebar test, identity/projection/decoration/tree-off and toggle
-  contract tests, and measured sidebar width evidence.
 
 [Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Algorant/herdr-agent-tree/releases/tag/v0.1.0

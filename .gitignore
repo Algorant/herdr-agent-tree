@@ -1,3 +1,4 @@
 /target
+/.tandem/
 __pycache__/
 *.pyc
