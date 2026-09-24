@@ -129,3 +129,7 @@
 {"ts":"2026-09-24T14:25:10Z","event":"accord.delivered","id":"task-20","summary":"Accord deliver for task-20","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":129}
 {"ts":"2026-09-24T14:25:13Z","event":"task.completed","id":"task-20","summary":"Completed","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":130}
 {"ts":"2026-09-24T14:25:16Z","event":"accord.resumed","id":"task-8-2","summary":"Accord resume for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":131}
+{"ts":"2026-09-24T14:28:09Z","event":"task.created","id":"task-21","summary":"Allow verified subscriber replacement after Herdr-managed source reinstall","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":132}
+{"ts":"2026-09-24T14:28:12Z","event":"task.updated","id":"task-8-2","summary":"Updated task-8-2 metadata: blockers","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":133}
+{"ts":"2026-09-24T14:28:16Z","event":"accord.blocked","id":"task-8-2","summary":"Accord block for task-8-2","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":134}
+{"ts":"2026-09-24T14:28:19Z","event":"accord.claimed","id":"task-21","summary":"Accord claim for task-21","actor":"ce2d8b18-ea48-430f-ad5d-15adb83c3624","seq":135}
