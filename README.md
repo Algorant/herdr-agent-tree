@@ -348,8 +348,8 @@ shortcut and row token but no plugin:
 endpoint: local (kind: local)
   herdr:       running 0.9.0 (protocol 22, compatible=True, min 0.9.0)
   plugin:      Agent Tree 0.1.0 enabled at ~/.local/share/herdr-agent-tree/stage (source local)
-  staged:      0a7e7a77...  ~/.local/share/herdr-agent-tree/stage/src/agent-tree
-  subscriber:  1 running pids 961729 (sha256 matches staged)
+  executable:  0a7e7a77...  ~/.local/share/herdr-agent-tree/stage/src/agent-tree
+  subscriber:  1 running pids 961729 (sha256 matches registered executable)
   toggle:      action available, tree-off False
   shortcut:    present prefix+t
   sidebar:     $agent_tree_row present

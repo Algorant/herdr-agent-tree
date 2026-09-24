@@ -275,7 +275,8 @@ doc = json.load(open(sys.argv[1]))
 endpoint = doc["endpoints"][0]
 assert endpoint["verdict"] == "healthy", endpoint
 assert endpoint["subscriber"]["count"] == 1, endpoint["subscriber"]
-assert endpoint["subscriber"]["matches_staged"] is True, endpoint["subscriber"]
+assert endpoint["subscriber"]["matches_registered"] is True, endpoint["subscriber"]
+assert endpoint["executable"]["path"].endswith("/stage/src/agent-tree"), endpoint["executable"]
 assert endpoint["sidebar"]["agent_tree_row_present"] is True, endpoint["sidebar"]
 assert endpoint["shortcut"]["present"] is True, endpoint["shortcut"]
 panes = endpoint["panes"]
@@ -286,7 +287,114 @@ assert panes["delegated_missing_relationship"] == 2, panes
 assert panes["ordinary_pi"] == 1, panes
 assert doc["split_state"] is False
 PY
-pass 'local endpoint reports healthy and separates role-declared from ordinary panes'
+pass 'local staged endpoint reports healthy and separates role-declared from ordinary panes'
+
+# A GitHub-managed source install runs the built target binary through a tracked launcher.
+# Its launcher bytes must not be mistaken for the running executable bytes.
+kill "$SUB_PID"
+wait "$SUB_PID" 2>/dev/null || true
+SUB_PID=
+MANAGED=$LOCAL_CONFIG/plugins/github/agent-tree-fixture
+mkdir -p "$MANAGED/src" "$MANAGED/target/release"
+cp -- "$BINARY" "$MANAGED/target/release/agent-tree"
+printf '#!/bin/sh\nexec "$(dirname "$0")/../target/release/agent-tree" "$@"\n' > "$MANAGED/src/agent-tree"
+chmod +x "$MANAGED/src/agent-tree"
+python3 - "$MANAGED" >"$FAKE/local/plugins.json" <<'PY'
+import json, sys
+root = sys.argv[1]
+plugin = {
+    "plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.1.0",
+    "manifest_path": root + "/herdr-plugin.toml", "plugin_root": root,
+    "enabled": True, "platforms": ["linux"],
+    "source": {"kind": "github", "resolved_commit": "fixture-commit"},
+    "actions": [{"id": action, "title": action, "command": ["./src/agent-tree", action]}
+                for action in ("apply", "clear", "reload", "toggle")],
+    "startup": [{"command": ["./src/agent-tree", "start"]}],
+}
+print(json.dumps({"result": {"plugins": [plugin], "type": "plugin_list"}}))
+PY
+env HERDR_PLUGIN_ID=agent-tree HERDR_SOCKET_PATH="$LOCAL_SOCKET" \
+    HERDR_PLUGIN_STATE_DIR="$LOCAL_PLUGIN_STATE" HERDR_PLUGIN_ROOT="$MANAGED" \
+    "$MANAGED/src/agent-tree" subscriber >"$SB/managed.log" 2>&1 &
+SUB_PID=$!
+for _ in $(seq 1 100); do
+    [ -f "$LOCAL_PLUGIN_STATE/subscriber-$TAG.lock" ] && kill -0 "$SUB_PID" 2>/dev/null && break
+    sleep 0.1
+done
+run_doctor --endpoint local --json >"$SB/managed.json"
+python3 - "$SB/managed.json" "$MANAGED" <<'PY' || fail 'healthy managed source install was rejected'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["verdict"] == "healthy", endpoint
+assert endpoint["plugin"]["source_kind"] == "github", endpoint
+assert endpoint["executable"]["path"] == sys.argv[2] + "/target/release/agent-tree", endpoint
+assert endpoint["subscriber"]["matches_registered"] is True, endpoint
+assert endpoint["subscriber"]["count"] == 1, endpoint
+PY
+pass 'managed source install matches the built target executable, not its launcher'
+
+# A different running binary must not pass merely because it has the same name.
+cp -- "$BINARY" "$SB/replacement-agent-tree"
+printf 'mismatched build\n' >> "$SB/replacement-agent-tree"
+mv -- "$SB/replacement-agent-tree" "$MANAGED/target/release/agent-tree"
+run_doctor --endpoint local --json >"$SB/mismatch.json"
+python3 - "$SB/mismatch.json" <<'PY' || fail 'changed registered executable was not rejected'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["verdict"] == "degraded", endpoint
+assert endpoint["subscriber"]["matches_registered"] is False, endpoint
+assert any("does not match the registered plugin executable" in issue for issue in endpoint["issues"]), endpoint
+PY
+pass 'managed source install rejects a genuine running executable mismatch'
+
+# A byte-identical subscriber started outside the registered root is also foreign.
+kill "$SUB_PID"
+wait "$SUB_PID" 2>/dev/null || true
+SUB_PID=
+cp -- "$BINARY" "$SB/agent-tree"
+env HERDR_PLUGIN_ID=agent-tree HERDR_SOCKET_PATH="$LOCAL_SOCKET" \
+    HERDR_PLUGIN_STATE_DIR="$LOCAL_PLUGIN_STATE" HERDR_PLUGIN_ROOT="$MANAGED" \
+    "$SB/agent-tree" subscriber >"$SB/foreign.log" 2>&1 &
+SUB_PID=$!
+for _ in $(seq 1 100); do
+    [ -f "$LOCAL_PLUGIN_STATE/subscriber-$TAG.lock" ] && kill -0 "$SUB_PID" 2>/dev/null && break
+    sleep 0.1
+done
+cp -- "$BINARY" "$SB/replacement-agent-tree"
+mv -- "$SB/replacement-agent-tree" "$MANAGED/target/release/agent-tree"
+run_doctor --endpoint local --json >"$SB/foreign.json"
+python3 - "$SB/foreign.json" <<'PY' || fail 'foreign same-hash subscriber was accepted'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["verdict"] == "degraded", endpoint
+assert endpoint["subscriber"]["matches_registered"] is False, endpoint
+assert endpoint["subscriber"]["sha256"] == [endpoint["executable"]["sha256"]], endpoint
+PY
+pass 'byte-identical foreign subscriber is rejected by executable path'
+
+# Restore the staged fixture for all subsequent endpoint checks.
+kill "$SUB_PID"
+wait "$SUB_PID" 2>/dev/null || true
+SUB_PID=
+python3 - "$LOCAL_STAGE" "$LOCAL_SHA" >"$FAKE/local/plugins.json" <<'PY'
+import json, sys
+root = sys.argv[1]
+plugin = {"plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.1.0",
+          "manifest_path": root + "/herdr-plugin.toml", "plugin_root": root,
+          "enabled": True, "platforms": ["linux"], "source": {"kind": "local"},
+          "actions": [{"id": action, "title": action, "command": ["./src/agent-tree", action]}
+                      for action in ("apply", "clear", "reload", "toggle")],
+          "startup": [{"command": ["./src/agent-tree", "start"]}]}
+print(json.dumps({"result": {"plugins": [plugin], "type": "plugin_list"}}))
+PY
+env HERDR_PLUGIN_ID=agent-tree HERDR_SOCKET_PATH="$LOCAL_SOCKET" \
+    HERDR_PLUGIN_STATE_DIR="$LOCAL_PLUGIN_STATE" HERDR_PLUGIN_ROOT="$LOCAL_STAGE" \
+    "$LOCAL_STAGE/src/agent-tree" subscriber >"$SB/subscriber-restored.log" 2>&1 &
+SUB_PID=$!
+for _ in $(seq 1 100); do
+    [ -f "$LOCAL_PLUGIN_STATE/subscriber-$TAG.lock" ] && kill -0 "$SUB_PID" 2>/dev/null && break
+    sleep 0.1
+done
 
 # ---------------------------------------------------------------------------
 # 2. Remote endpoint: shortcut + $agent_tree_row present, no plugin -> degraded split state.

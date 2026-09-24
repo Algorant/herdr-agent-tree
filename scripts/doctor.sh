@@ -88,6 +88,20 @@ else:
 PY
 }
 
+registered_binary() {
+  local dir=$1 fallback=$2 root kind
+  root=$(plugin_entry "$dir/plugins.json" plugin_root 2>/dev/null || true)
+  [ -n "$root" ] || { printf '%s' "$fallback"; return; }
+  kind=$(plugin_entry "$dir/plugins.json" source 2>/dev/null | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("kind", ""))
+except (ValueError, AttributeError): print("")' || true)
+  case "$kind" in
+    github) printf '%s/target/release/agent-tree' "$root" ;;
+    local) printf '%s/src/agent-tree' "$root" ;;
+    *) printf '%s/unknown-install-kind/agent-tree' "$root" ;;
+  esac
+}
+
 collect_local() {
   local dir=$1
   local config_path="${XDG_CONFIG_HOME:-$HOME/.config}/herdr/config.toml"
@@ -103,13 +117,11 @@ collect_local() {
   if "$HERDR_BIN" agent list > "$dir/agents.raw.json" 2>/dev/null; then :; else echo '{}' > "$dir/agents.raw.json"; fi
   json_extract "$dir/agents.raw.json" 'data["result"]["agents"]' > "$dir/agents.json" 2>/dev/null || echo '[]' > "$dir/agents.json"
 
-  local socket="" stage_binary="$prefix/stage/src/agent-tree"
+  local socket="" stage_binary
   if [ -s "$dir/status.json" ]; then
     socket=$(json_extract "$dir/status.json" 'data.get("socket")' 2>/dev/null || true)
   fi
-  if [ -s "$dir/plugin_root" ]; then
-    stage_binary="$(cat "$dir/plugin_root")/src/agent-tree"
-  fi
+  stage_binary=$(registered_binary "$dir" "$prefix/stage/src/agent-tree")
   python3 "$LIB/probe.py" --socket "$socket" --stage "$stage_binary" --state-dir "$state" > "$dir/probe.json" 2>/dev/null \
     || echo '{"subscribers":[],"subscriber_count":0,"replaced_stage_subscribers":[],"stage":{},"tree_off":null}' > "$dir/probe.json"
   JSON_SOCKET=$socket
@@ -137,16 +149,14 @@ collect_remote() {
   "$HERDR_BIN" --machine "$EP_ID" agent list > "$dir/agents.raw.json" 2>/dev/null || echo '{}' > "$dir/agents.raw.json"
   json_extract "$dir/agents.raw.json" 'data["result"]["agents"]' > "$dir/agents.json" 2>/dev/null || echo '[]' > "$dir/agents.json"
 
-  local socket="" stage_binary="$prefix/stage/src/agent-tree"
+  local socket="" stage_binary
   if [ -n "$remote_herdr" ]; then
     socket=$(remote_exec env HERDR_SESSION="$EP_SESSION" "$remote_herdr" status server --json 2>/dev/null \
       | python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("socket") or "")
 except Exception: print("")' || true)
   fi
-  if [ -s "$dir/plugin_root" ]; then
-    stage_binary="$(cat "$dir/plugin_root")/src/agent-tree"
-  fi
+  stage_binary=$(registered_binary "$dir" "$prefix/stage/src/agent-tree")
   remote_exec python3 -c "$(cat "$LIB/probe.py")" --socket "$socket" --stage "$stage_binary" --state-dir "$state" > "$dir/probe.json" 2>/dev/null \
     || echo '{"subscribers":[],"subscriber_count":0,"replaced_stage_subscribers":[],"stage":{},"tree_off":null}' > "$dir/probe.json"
   JSON_SOCKET=$socket

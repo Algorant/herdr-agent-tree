@@ -103,8 +103,8 @@ def build_endpoint(raw: dict) -> dict:
         "socket": raw.get("socket"),
         "herdr": None,
         "plugin": None,
-        "staged": {"path": None, "present": False, "sha256": None},
-        "subscriber": {"count": 0, "pids": [], "sha256": [], "matches_staged": None, "replaced_stage": 0},
+        "executable": {"path": None, "present": False, "sha256": None},
+        "subscriber": {"count": 0, "pids": [], "sha256": [], "matches_registered": None, "replaced_stage": 0},
         "toggle": {"action_available": False, "tree_off": probe.get("tree_off")},
         "shortcut": {"present": False, "key": None, "occupied": False, "managed": False},
         "sidebar": {
@@ -157,7 +157,11 @@ def build_endpoint(raw: dict) -> dict:
             report["issues"].append("the agent-tree plugin is registered but disabled")
         if "toggle" not in actions:
             report["issues"].append("the agent-tree.toggle action is not registered")
-        stage_binary = os.path.join(plugin.get("plugin_root") or "", "src", "agent-tree")
+        source_kind = (plugin.get("source") or {}).get("kind")
+        if source_kind not in ("github", "local"):
+            report["issues"].append("unsupported agent-tree plugin source kind: %s" % source_kind)
+        binary_suffix = ("target", "release", "agent-tree") if source_kind == "github" else ("src", "agent-tree")
+        registered_binary = os.path.join(plugin.get("plugin_root") or "", *binary_suffix)
     else:
         report["plugin"] = {
             "registered": False,
@@ -171,19 +175,16 @@ def build_endpoint(raw: dict) -> dict:
             "toggle_available": False,
         }
         report["issues"].append("the agent-tree plugin is not registered")
-        stage_binary = raw.get("stage_binary")
+        registered_binary = raw.get("stage_binary")
 
     stage = probe.get("stage") or {}
-    if stage.get("path") and stage.get("path") != stage_binary:
-        # The probe ran against the registered root's binary; keep the probe's own path.
-        pass
-    report["staged"] = {
-        "path": stage.get("path") or stage_binary,
-        "present": bool(stage.get("present")),
-        "sha256": stage.get("sha256"),
+    report["executable"] = {
+        "path": stage.get("path") or registered_binary,
+        "present": bool(stage.get("present")) and stage.get("path") == registered_binary,
+        "sha256": stage.get("sha256") if stage.get("path") == registered_binary else None,
     }
-    if not report["staged"]["present"]:
-        report["issues"].append("no staged plugin binary is present")
+    if not report["executable"]["present"]:
+        report["issues"].append("registered plugin executable is missing or was not probed")
 
     subscribers = probe.get("subscribers") or []
     replaced = probe.get("replaced_stage_subscribers") or []
@@ -191,16 +192,21 @@ def build_endpoint(raw: dict) -> dict:
         "count": len(subscribers),
         "pids": [entry.get("pid") for entry in subscribers],
         "sha256": [entry.get("sha256") for entry in subscribers],
-        "matches_staged": bool(subscribers)
-        and all(entry.get("sha256") and entry.get("sha256") == report["staged"]["sha256"] for entry in subscribers),
+        "matches_registered": bool(report["executable"]["present"]) and bool(subscribers)
+        and all(
+            entry.get("exe") == report["executable"]["path"]
+            and entry.get("sha256")
+            and entry.get("sha256") == report["executable"]["sha256"]
+            for entry in subscribers
+        ),
         "replaced_stage": len(replaced),
     }
     if replaced:
         report["issues"].append("a subscriber is still running from a replaced .stage-old.* directory")
     if len(subscribers) != 1:
         report["issues"].append("expected exactly one live subscriber, found %d" % len(subscribers))
-    elif not report["subscriber"]["matches_staged"]:
-        report["issues"].append("the running subscriber SHA-256 does not match the staged binary")
+    elif not report["subscriber"]["matches_registered"]:
+        report["issues"].append("the running subscriber path or SHA-256 does not match the registered plugin executable")
     report["toggle"]["action_available"] = bool(report["plugin"] and report["plugin"]["toggle_available"])
 
     inspected = config.inspect(config_text.splitlines(keepends=True), config.DEFAULT_KEY)
@@ -279,10 +285,10 @@ def render_text(reports, split: bool) -> str:
         else:
             lines.append("  plugin:      NOT registered")
         lines.append(
-            "  staged:      %s%s"
+            "  executable:  %s%s"
             % (
-                report["staged"]["sha256"] or "absent",
-                "" if not report["staged"]["sha256"] else "  " + (report["staged"]["path"] or ""),
+                report["executable"]["sha256"] or "absent",
+                "" if not report["executable"]["sha256"] else "  " + (report["executable"]["path"] or ""),
             )
         )
         subscriber = report["subscriber"]
@@ -291,7 +297,7 @@ def render_text(reports, split: bool) -> str:
             % (
                 subscriber["count"],
                 "" if subscriber["count"] == 0 else " pids " + ",".join(str(pid) for pid in subscriber["pids"]),
-                "matches staged" if subscriber["matches_staged"] else "does not match staged",
+                "matches registered executable" if subscriber["matches_registered"] else "does not match registered executable",
             )
         )
         lines.append(
