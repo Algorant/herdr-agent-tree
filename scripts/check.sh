@@ -45,8 +45,8 @@ say 'Shell syntax'
 sh -n scripts/check.sh scripts/stage-local.sh scripts/lib/endpoint.sh scripts/release/*.sh \
     tests/shell/source-install.sh tests/shell/stage-local.sh \
     tests/shell/dev-reload.sh src/agent-tree
-bash -n scripts/deploy.sh scripts/deploy-endpoint.sh scripts/doctor.sh \
-    tests/shell/deploy-endpoint.sh tests/shell/doctor.sh \
+bash -n scripts/deploy.sh scripts/deploy-endpoint.sh scripts/doctor.sh scripts/activate-managed.sh \
+    tests/shell/activate-managed.sh tests/shell/deploy-endpoint.sh tests/shell/doctor.sh \
     tests/e2e/sidebar.sh tests/e2e/deploy-reload.sh tests/e2e/toggle.sh
 
 say 'Python syntax'
@@ -66,6 +66,9 @@ tests/shell/stage-local.sh
 
 say 'Dev reload tests'
 tests/shell/dev-reload.sh
+
+say 'Managed activation tests'
+tests/shell/activate-managed.sh
 
 say 'Endpoint doctor tests'
 tests/shell/doctor.sh

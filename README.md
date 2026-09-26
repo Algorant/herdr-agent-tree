@@ -138,25 +138,41 @@ The supported install path for a normal user is Herdr's own plugin lifecycle. In
 published v0.1.0 source release from GitHub:
 
 Herdr clones the tagged source revision, runs the manifest `[[build]]` command
-(`cargo build --locked --release`) in the managed checkout, and registers the plugin:
+(`cargo build --locked --release`) in the managed checkout, and registers the plugin.
+**Installation is not activation**: the plugin cannot change Herdr's sidebar configuration,
+and startup hooks do not run on install or enable in an already-running server.
 
 ```sh
 herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0
+herdr plugin enable agent-tree
+# From this repository checkout (or the managed source checkout):
+scripts/activate-managed.sh
+scripts/doctor.sh --endpoint local
 ```
 
-A normal user does not need this checkout or a prebuilt binary: Herdr runs the locked Cargo
-release build itself, so the managed machine needs the Rust toolchain (1.81+), `cargo`, `git`
-and `rustc`. Herdr stores the managed checkout under its own plugin data directory.
+`activate-managed.sh` preserves the GitHub-managed registration, refuses to replace custom
+Agents rows, backs up the config when adding the required `$agent_tree_row` cell, reloads
+config, invokes `apply`, and **waits for the action log to succeed**. The initial `action
+invoke` response is only a running acknowledgment, not proof of activation. The doctor
+should show one subscriber, a present sidebar cell, and ranked panes when a validated
+delegation family exists. No ranked family means no visible ordering difference even with
+an active tree view. The optional `prefix+t` binding is separate (see below).
 
-### Activate the managed install (manual)
+A normal user does not need a prebuilt binary: Herdr runs the locked Cargo release build
+itself, so the managed machine needs the Rust toolchain (1.81+), `cargo`, `git` and `rustc`.
+Herdr stores the managed checkout under its own plugin data directory. If you do not have a
+repository checkout, run the activation script at `<managed plugin_root>/scripts/activate-managed.sh`;
+`herdr plugin list --json` reports that root.
 
-Herdr registers the plugin; activation is still explicit. Add the sidebar rows block from
-"Agents row configuration" below, then enable, reload and apply:
+### Activate the managed install manually
+
+Alternatively, add the sidebar rows block from "Agents row configuration" below, then:
 
 ```sh
 herdr plugin enable agent-tree
 herdr server reload-config
 herdr plugin action invoke agent-tree.apply
+herdr plugin log list --plugin agent-tree --limit 1  # require status: succeeded
 ```
 
 Without the rows block, the plugin's decoration has no cell to render into. The startup hook
