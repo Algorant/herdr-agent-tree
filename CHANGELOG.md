@@ -6,6 +6,39 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
+### Added
+
+- `scripts/activate-managed.sh` activates a Herdr-managed source install without changing its
+  registration. It adds the required one-cell Agent row only when needed, backs up the config,
+  reloads it, applies the plugin, and verifies the action completed successfully.
+
+### Changed
+
+- The managed/default Agents row is now `[["state_icon", "$agent_tree_row"]]`, replacing
+  `[["state_icon", "$agent_tree_row", "terminal_title_stripped"]]`. For an existing
+  user-owned `[ui.sidebar.agents]` block, manually make this row change; deploy and activation
+  never rewrite user-owned blocks.
+- `agent_tree_row` is now the complete row value published for every agent row, rather than a
+  decoration only on delegated rows. Ordinary and root rows show workspace · tab; validated
+  Workers and Subagents show branch/role plus their own name, dropping task and attention
+  details first when space is limited. The plugin reads `session.snapshot` and subscribes to
+  `workspace.renamed`, `workspace.updated`, and `tab.renamed` so display labels stay current.
+
+### Fixed
+
+- Released-agent panes no longer retain stale plugin-owned `agent_tree_row` or `agent_tree_rank`
+  values. Cleanup clears only those two keys and preserves tokens from other sources.
+
+### Known limitations
+
+- Agents on endpoints without a compatible Agent Tree plugin render icon-only rows. This also
+  applies when an endpoint runs Agent Tree 0.1.0, its subscriber is stopped, or its saved machine
+  is unreachable. Upgrade the plugin on every saved machine—for example, run
+  `scripts/deploy-endpoint.sh --endpoint <name>` or reinstall the managed plugin at v0.2.0—to
+  provide composed labels.
+
 ## [0.1.0] - 2026-09-24
 
 ### Added
@@ -109,5 +142,6 @@ semantic versioning.
   still parses; uninstall is transactional with a full preflight and automatic restore; and
   the deployment lock is removed only when its owner token still matches.
 
-[Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Algorant/herdr-agent-tree/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Algorant/herdr-agent-tree/releases/tag/v0.1.0

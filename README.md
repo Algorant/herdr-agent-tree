@@ -8,7 +8,7 @@ including across tabs and workspaces.
 It is an external Herdr plugin. It never changes Pi, never writes Pi-owned metadata, and
 never touches panes it cannot validate.
 
-Status: v0.1.0 source release for Linux and Herdr 0.9.0+. The Herdr-managed GitHub install
+Status: v0.2.0 source release for Linux and Herdr 0.9.0+. The Herdr-managed GitHub install
 was dogfooded on Herdr 0.9.1 with a real Pi root, Worker and Subagents, including managed
 reinstall, tree/native toggle and cleanup. The isolated `tests/e2e/sidebar.sh` and
 `tests/e2e/toggle.sh` also exercise the tree and shortcut (see "End-to-end test").
@@ -135,7 +135,7 @@ The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` sect
 ### Herdr-managed source install (the normal user path)
 
 The supported install path for a normal user is Herdr's own plugin lifecycle. Install the
-published v0.1.0 source release from GitHub:
+published v0.2.0 source release from GitHub:
 
 Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 (`cargo build --locked --release`) in the managed checkout, and registers the plugin.
@@ -143,7 +143,7 @@ Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 and startup hooks do not run on install or enable in an already-running server.
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.2.0
 herdr plugin enable agent-tree
 # From this repository checkout (or the managed source checkout):
 scripts/activate-managed.sh
@@ -152,7 +152,10 @@ scripts/doctor.sh --endpoint local
 
 `activate-managed.sh` preserves the GitHub-managed registration, refuses to replace custom
 Agents rows, backs up the config when adding the required `$agent_tree_row` cell, reloads
-config, invokes `apply`, and **waits for the action log to succeed**. The initial `action
+config, invokes `apply`, and **waits for the action log to succeed**. If you already have a
+user-owned `[ui.sidebar.agents]` block, manually update it to
+`rows = [["state_icon", "$agent_tree_row"]]` before activation; neither deploy nor activation
+rewrites user-owned blocks. The initial `action
 invoke` response is only a running acknowledgment, not proof of activation. The doctor
 should show one subscriber, a present sidebar cell, and ranked panes when a validated
 delegation family exists. No ranked family means no visible ordering difference even with
@@ -357,6 +360,7 @@ cwd. A representative report where the local endpoint is healthy and a saved end
 shortcut and row token but no plugin:
 
 ```
+# Example report from the v0.1.0 release:
 endpoint: local (kind: local)
   herdr:       running 0.9.0 (protocol 22, compatible=True, min 0.9.0)
   plugin:      Agent Tree 0.1.0 enabled at ~/.local/share/herdr-agent-tree/stage (source local)
@@ -457,9 +461,9 @@ rows = [["state_icon", "$agent_tree_row"]]
 
 Deploy updates its own marked fragment, but deliberately leaves a foreign
 `[ui.sidebar.agents]` block byte-for-byte unchanged, including old rows that contain the token.
-After Algorant approves live dogfood, manually migrate any existing multi-cell/custom row that
-repeats native location or title cells to the one-cell form above and reload Herdr config.
-Deploy does not rewrite foreign user configuration automatically.
+For an existing user-owned `[ui.sidebar.agents]` block, manually migrate any multi-cell/custom
+row to the one-cell form above and reload Herdr config. Deploy does not rewrite foreign user
+configuration automatically.
 
 The plugin composes the complete one-line display value into that single token. Roots and
 ordinary agents show workspace · tab; validated descendants show branch/role followed by their
