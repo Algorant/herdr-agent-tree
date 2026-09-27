@@ -106,7 +106,7 @@ for var in $CREDENTIAL_VARS; do
     unset "$var" 2>/dev/null || true
 done
 
-# The isolated TUI reads this config; a fixed sidebar width keeps the render stable.
+# The isolated TUI starts pinned at 32; later renders exercise other widths and local defaults.
 cat > "$XDG_CONFIG_HOME/herdr/config.toml" <<'CFG'
 [server]
 headless_cols = 200
@@ -120,10 +120,11 @@ sidebar_width = 32
 sidebar_min_width = 32
 sidebar_max_width = 32
 
-# One line per agent: status, tree decoration, then the agent's terminal title.
+# One line per agent: status plus the plugin-composed location/tree/identity value.
 [ui.sidebar.agents]
-rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
+rows = [["state_icon", "$agent_tree_row"]]
 CFG
+CONFIG="$XDG_CONFIG_HOME/herdr/config.toml"
 
 SERVER_PID=""
 TMUX_SOCKET=""
@@ -263,6 +264,7 @@ step "lone-2  (${SECONDS-t0}s)"
 
 P_X1=$(mkws codex-1)
 herdr pane report-agent "$P_X1" --source pi-fixture --agent codex --state idle >/dev/null
+herdr pane report-metadata "$P_X1" --source release-owner-fixture --token "keep=kept" >/dev/null
 step "codex-1 (reported non-Pi agent, ${SECONDS-t0}s)"
 
 make_pi root-alpha;   P_R1=$GP_PANE; S_R1=$GP_SESSION; step "root-alpha   (${SECONDS-t0}s)"
@@ -286,7 +288,71 @@ log "Applying the tree projection"
 herdr plugin action invoke agent-tree.apply >/dev/null
 
 rank_of() { # <pane> -> rank or "-"
-    herdr agent list | jq -r --arg p "$1" '.result.agents[] | select(.pane_id==$p) | .tokens.agent_tree_rank // "-"'
+    herdr agent list | jq -r --arg p "$1" '[.result.agents[] | select(.pane_id==$p) | .tokens.agent_tree_rank // "-"][0] // "-"'
+}
+
+row_of() { # <pane> -> composed display token or "-"
+    herdr agent list | jq -r --arg p "$1" '.result.agents[] | select(.pane_id==$p) | .tokens.agent_tree_row // "-"'
+}
+
+pane_tokens() { # <pane> -> tokens from the retained pane record, even if agent-list entry vanished
+    herdr pane get "$1" | jq -c '.result.pane.tokens // {}'
+}
+
+wait_row_contains() { # <pane> <substring>
+    local pane="$1" wanted="$2" got=""
+    for _ in $(seq 1 40); do
+        got=$(row_of "$pane")
+        [[ "$got" == *"$wanted"* ]] && return 0
+        sleep 0.25
+    done
+    fail "pane $pane composed row did not contain '$wanted' (got '$got')"
+}
+
+watch_event() { # <dotted event> <data field> <value> -> starts watcher and waits for subscription
+    local event="$1" field="$2" value="$3" output="$TMP/event.json" ready="$TMP/event.ready"
+    rm -f "$output" "$ready"
+    python3 - "$HERDR_SOCKET_PATH" "$event" "$field" "$value" "$output" "$ready" <<'PY' &
+import json, socket, sys, time
+path, wanted, field, value, output, ready = sys.argv[1:]
+seen = output + ".seen"
+s = socket.socket(socket.AF_UNIX)
+s.settimeout(15)
+s.connect(path)
+f = s.makefile("rwb")
+f.write((json.dumps({"id":"watch","method":"events.subscribe","params":{"subscriptions":[{"type":wanted}]}})+"\n").encode())
+f.flush()
+ack = json.loads(f.readline())
+if ack.get("result", {}).get("type") != "subscription_started":
+    raise SystemExit("subscription failed: " + repr(ack))
+open(ready, "w").close()
+while True:
+    message = json.loads(f.readline())
+    event = message.get("event")
+    data = message.get("data") or {}
+    if isinstance(data.get("pane"), dict):
+        data = {**data, **data["pane"]}
+    with open(seen, "a") as handle:
+        handle.write(json.dumps(message) + "\n")
+    if event in (wanted, wanted.replace(".", "_")) and str(data.get(field)) == value:
+        with open(output, "w") as handle:
+            json.dump(message, handle)
+        break
+s.close()
+PY
+    WATCHER_PID=$!
+    for _ in $(seq 1 40); do
+        [ -f "$ready" ] && return 0
+        kill -0 "$WATCHER_PID" 2>/dev/null || fail "event watcher exited before subscribing to $event"
+        sleep 0.1
+    done
+    fail "event watcher did not subscribe to $event"
+}
+
+finish_event_watch() {
+    wait "$WATCHER_PID" || { printf 'seen events: '; cat "$TMP/event.json.seen" 2>/dev/null || true; fail "did not observe expected Herdr event"; }
+    [ -s "$TMP/event.json" ] || fail "event watcher produced no event evidence"
+    step "observed Herdr event: $(jq -r '.event' "$TMP/event.json")"
 }
 
 wait_ranked() { # <count> -> 0 if reached within ~20s
@@ -313,9 +379,34 @@ expect_rank "$P_S1" 000003 "sub-alpha (Worker-owned Subagent)"
 expect_rank "$P_R2" 000004 "root-beta"
 expect_rank "$P_S2" 000005 "sub-beta"
 for pair in "$P_L1=lone-1" "$P_L2=lone-2" "$P_X1=codex-1"; do
-    [ "$(rank_of "${pair%%=*}")" = "-" ] || fail "${pair##*=} must stay unranked"
+    local_pane=${pair%%=*}; local_name=${pair##*=}
+    [ "$(rank_of "$local_pane")" = "-" ] || fail "$local_name must stay unranked"
+    row=$(row_of "$local_pane")
+    [ -n "$row" ] && [ "$row" != "-" ] || fail "$local_name has no composed display row"
+    [[ "$row" == *"$local_name"* ]] || [[ "$row" == *"$local_name ·"* ]] || fail "$local_name display is not readable: $row"
 done
-step "Undelegating Pi rows and the non-Pi row stayed unranked"
+step "Unlinked Pi and non-Pi rows have readable display tokens and remain unranked"
+
+log "Verifying live display refresh from name and label events"
+watch_event pane.updated pane_id "$P_W1"
+herdr agent rename "$P_W1" worker-task-3-78712afb >/dev/null
+finish_event_watch
+wait_row_contains "$P_W1" "worker-task-3"
+watch_event pane.updated pane_id "$P_S1"
+herdr agent rename "$P_S1" worker-owned-lint-helper >/dev/null
+finish_event_watch
+wait_row_contains "$P_S1" "worker-own"
+ROOT_WS=$(herdr agent list | jq -r --arg p "$P_R1" '.result.agents[] | select(.pane_id==$p) | .workspace_id')
+ROOT_TAB=$(herdr agent list | jq -r --arg p "$P_R1" '.result.agents[] | select(.pane_id==$p) | .tab_id')
+watch_event workspace.renamed workspace_id "$ROOT_WS"
+herdr workspace rename "$ROOT_WS" root-workspace-renamed >/dev/null
+finish_event_watch
+wait_row_contains "$P_R1" "root-workspace-renamed"
+watch_event tab.renamed tab_id "$ROOT_TAB"
+herdr tab rename "$ROOT_TAB" root-tab-renamed >/dev/null
+finish_event_watch
+wait_row_contains "$P_R1" "root-workspace-renamed · root-tab-renamed"
+step "Name, workspace rename, and tab rename events refreshed composed tokens"
 
 # Tamper proof: forge a ranked leaf Subagent's agency_self and watch the plugin recompute
 # and drop it, then restore the true value and watch the rank return.
@@ -328,29 +419,124 @@ for _ in $(seq 1 30); do
     sleep 0.5
 done
 [ "$dropped" = 1 ] || fail "a forged agency_self was not rejected"
-step "Forged agency_self dropped the Subagent"
+invalid_sub_row=$(row_of "$P_S1")
+[[ "$invalid_sub_row" != *"└─S"* ]] || fail "invalid relationship retained a fabricated child branch: $invalid_sub_row"
+[[ "$invalid_sub_row" == *"sub-alpha"* ]] || fail "invalid relationship lost the ordinary location display: $invalid_sub_row"
+step "Forged agency_self dropped the Subagent rank and returned it to its ordinary location row"
 report_rel "$P_S1" subagent "$H_S1" "$H_W1" "question=1"
 wait_ranked 5 || fail "restoring the true agency_self did not restore the tree"
 [ "$(rank_of "$P_S1")" = "000003" ] || fail "Subagent rank did not return after restore"
 step "True agency_self restored the Subagent rank"
 
 # ---------------------------------------------------------------------------
-# 6. Render the sidebar through a real tmux PTY and assert the tree.
+# 6. Render the one-cell sidebar at pinned widths and at the local default settings.
 # ---------------------------------------------------------------------------
-log "Rendering the sidebar and asserting the tree"
 TMUX_SOCKET="$TMP/tmux.sock"
-rm -f "$TMUX_SOCKET"
-tmux -S "$TMUX_SOCKET" new-session -d -x 150 -y 50 -s agent-tree-e2e "$HERDR_BIN"
-sleep 6
-# Dismiss the isolated client's first-run modal; harmless if it is not shown.
-tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-e2e Escape
-sleep 1
-tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-e2e Escape
-sleep 1
-text=$(tmux -S "$TMUX_SOCKET" capture-pane -p -t agent-tree-e2e)
-tmux -S "$TMUX_SOCKET" kill-server >/dev/null 2>&1 || true
-printf '%s\n' "$text" | grep -qE 'agents +tree' || fail "the rendered sidebar did not show the 'tree' view label"
-printf '%s\n' "$text" | grep -q '└─W' || fail "the rendered sidebar did not show the Worker row"
-step "Sidebar rendered with the 'tree' view label and a Worker row"
+set_width() { # pinned width; use a separate default-settings render below
+    python3 - "$CONFIG" "$1" <<'PY'
+import pathlib, re, sys
+path, width = pathlib.Path(sys.argv[1]), sys.argv[2]
+text = path.read_text()
+for key in ("sidebar_width", "sidebar_min_width", "sidebar_max_width"):
+    text = re.sub(rf"(?m)^{key} = \d+$", f"{key} = {width}", text)
+path.write_text(text)
+PY
+    herdr server reload-config >/dev/null
+}
+render_and_assert() { # <label> <expected width|auto>
+    local label="$1" expected="$2" text measured
+    rm -f "$TMUX_SOCKET"
+    tmux -S "$TMUX_SOCKET" new-session -d -x 150 -y 50 -s agent-tree-e2e "$HERDR_BIN"
+    sleep 5
+    tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-e2e Escape
+    sleep 0.5
+    tmux -S "$TMUX_SOCKET" send-keys -t agent-tree-e2e Escape
+    sleep 0.5
+    text=$(tmux -S "$TMUX_SOCKET" capture-pane -p -t agent-tree-e2e)
+    tmux -S "$TMUX_SOCKET" kill-server >/dev/null 2>&1 || true
+    printf '%s\n' "$text" > "$TMP/capture.txt"
+    measured=$(python3 - "$TMP/capture.txt" "$TMP/sidebar.txt" "$label" <<'PY'
+import pathlib, re, sys
+source = pathlib.Path(sys.argv[1])
+region_path = pathlib.Path(sys.argv[2])
+label = sys.argv[3]
+lines = source.read_text().splitlines()
+header_index = next((i for i, line in enumerate(lines) if re.search(r"agents +tree", line)), None)
+if header_index is None:
+    raise SystemExit(f"{label}: no Agents header found in PTY capture")
+header = lines[header_index]
+agents = header.find("agents")
+tree = header.find("tree", agents + len("agents"))
+seam = tree + len("tree")
+if tree < 0 or seam >= len(header) or header[seam] not in "│┃║":
+    raise SystemExit(f"{label}: no pane-seam border immediately after the Agents header's tree label: {header!r}")
+width = seam + 1
+region_path.write_text("\n".join(line[:width] for line in lines))
+print(width)
+PY
+)
+    region=$(cat "$TMP/sidebar.txt")
+    if [ "$expected" = auto ]; then
+        [ "$measured" -ge 18 ] && [ "$measured" -le 36 ] || fail "$label: measured default sidebar seam outside Herdr's configured 18..36 bounds: $measured"
+    else
+        [ "$measured" = "$expected" ] || fail "$label: expected ${expected}-column sidebar at the rendered pane seam, measured $measured"
+    fi
+    printf '%s\n' "$region" | grep -qE 'agents +tree' || fail "$label: sidebar header missing: $region"
+    printf '%s\n' "$region" | grep -q '└─W worker-task-3' || fail "$label: Worker branch or identifying name prefix clipped: $region"
+    printf '%s\n' "$region" | grep -q '│  └─S worker-own' || fail "$label: nested Subagent branch/role/name missing: $region"
+    printf '%s\n' "$region" | grep -q 'lone-1' || fail "$label: lone Pi display row is not readable"
+    printf '%s\n' "$region" | grep -q 'lone-2' || fail "$label: second lone Pi display row is not readable"
+    printf '%s\n' "$region" | grep -q 'codex' || fail "$label: non-Pi display row is not readable"
+    if printf '%s\n' "$region" | grep -q 'π -'; then fail "$label: repeated native Pi title remains in composed sidebar row"; fi
+    step "$label: measured ${measured}-column sidebar seam; exact rows captured below"
+    printf '%s\n' "$region" | grep -E 'agents +tree|worker-task-3|worker-own|lone-1 ·|lone-2 ·|codex ·' | while IFS= read -r line; do
+        printf '     |%s\n' "$line"
+    done
+}
+for width in 26 32 36; do
+    set_width "$width"
+    render_and_assert "pinned-$width" "$width"
+done
+# Match the local config: no explicit width/min/max, allowing Herdr's default 26/min 18/max 36
+# and workspace-name autosizing to determine the sidebar. The boundary is measured from the
+# right-aligned tree label in the rendered Agents header, not inferred from pane layout width.
+python3 - "$CONFIG" <<'PY'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+text = re.sub(r"(?m)^sidebar_(?:width|min_width|max_width) = \d+\n", "", text)
+path.write_text(text)
+PY
+herdr server reload-config >/dev/null
+render_and_assert "local-default-width-settings" auto
+
+log "Verifying agent release cannot leave a stale plugin row"
+old_codex_row=$(row_of "$P_X1")
+python3 - "$HERDR_SOCKET_PATH" "$P_X1" <<'PY'
+import json, socket, sys
+s = socket.socket(socket.AF_UNIX)
+s.settimeout(10)
+s.connect(sys.argv[1])
+f = s.makefile("rwb")
+f.write((json.dumps({"id":"release-codex","method":"pane.release_agent","params":{"pane_id":sys.argv[2],"source":"pi-fixture","agent":"codex"}})+"\n").encode())
+f.flush()
+result = json.loads(f.readline())
+s.close()
+if "error" in result:
+    raise SystemExit("pane.release_agent failed: " + repr(result["error"]))
+PY
+for _ in $(seq 1 40); do
+    new_codex_row=$(row_of "$P_X1")
+    tokens=$(pane_tokens "$P_X1")
+    if ! printf '%s' "$tokens" | jq -e 'has("agent_tree_row") or has("agent_tree_rank")' >/dev/null; then break; fi
+    sleep 0.25
+done
+[ "$new_codex_row" != "$old_codex_row" ] || fail "released codex agent retained stale visible row '$old_codex_row'"
+[ "$(rank_of "$P_X1")" = "-" ] || fail "released codex pane unexpectedly gained a rank: $(rank_of "$P_X1")"
+if printf '%s' "$tokens" | jq -e 'has("agent_tree_row") or has("agent_tree_rank")' >/dev/null; then
+    fail "released codex pane retained stale plugin-owned tokens: $tokens"
+fi
+printf '%s' "$tokens" | jq -e '.keep == "kept"' >/dev/null || fail "orphan cleanup removed another source's pane token: $tokens"
+step "pane.get confirms released pane has no plugin-owned row/rank tokens and preserves other-source tokens: $tokens"
 
 log "End-to-end sidebar test passed"

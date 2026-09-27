@@ -1,8 +1,8 @@
-# task-4 measurements — agent identity at real sidebar widths
+# task-4 measurements — historical two-cell sidebar design (superseded)
 
-Evidence record for Tandem task-4 ("Show which agent a row belongs to without clipping").
-Outcome: **the current single-row configuration is retained.** This document is the measured
-trade that justifies that decision and the raw renders behind it.
+Archived evidence for Tandem task-4 ("Show which agent a row belongs to without clipping").
+Its two-cell design has been superseded by the approved one-cell composed display documented
+in `README.md`; these measurements are historical only and do not describe current defaults.
 
 ## Scope and isolation
 

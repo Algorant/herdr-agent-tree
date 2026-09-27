@@ -5,7 +5,7 @@ The plugin writes no configuration at runtime. The endpoint deploy manages exact
 marked fragments and never touches anything else:
 
   * the sidebar rows block that must reference ``$agent_tree_row`` so the plugin's
-    decoration has a cell to render into, and
+    composed display has a cell to render into, and
   * the documented ``prefix+t`` shortcut that invokes ``agent-tree.toggle``.
 
 Both are idempotent. An existing matching fragment is preserved byte-for-byte. A managed
@@ -29,7 +29,7 @@ SIDEBAR_HEADER = "[ui.sidebar.agents]"
 TOKEN = "$agent_tree_row"
 DEFAULT_KEY = "prefix+t"
 DEFAULT_COMMAND = "herdr plugin action invoke agent-tree.toggle"
-DEFAULT_ROWS = '[["state_icon", "$agent_tree_row", "terminal_title_stripped"]]'
+DEFAULT_ROWS = '[["state_icon", "$agent_tree_row"]]'
 
 # A TOML table header is a bare [name] or [[name]] line; an array element such as
 # ["state_icon", ...] or [{ token = ... }] must never be mistaken for one.

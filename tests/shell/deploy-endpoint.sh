@@ -324,6 +324,8 @@ class Handler(socketserver.StreamRequestHandler):
             method = request.get("method")
             if method == "events.subscribe":
                 result = {"type": "subscription_started"}
+            elif method == "session.snapshot":
+                result = {"snapshot": {"agents": [], "workspaces": [], "tabs": [], "panes": []}}
             elif method == "agent.list":
                 result = {"agents": []}
             elif method in ("agent.view.clear", "agent.view.set"):

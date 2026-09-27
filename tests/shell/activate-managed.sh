@@ -31,7 +31,7 @@ python3 - "$CONFIG" <<'PY'
 import sys, tomllib
 with open(sys.argv[1], 'rb') as f:
     data = tomllib.load(f)
-assert data['ui']['sidebar']['agents']['rows'] == [['state_icon', '$agent_tree_row', 'terminal_title_stripped']]
+assert data['ui']['sidebar']['agents']['rows'] == [['state_icon', '$agent_tree_row']]
 PY
 [ -f "${CONFIG}.agent-tree.bak" ]
 grep -q 'accent = "blue"' "${CONFIG}.agent-tree.bak"
@@ -52,4 +52,13 @@ if "$ROOT/scripts/activate-managed.sh" > "$TEMP/foreign.out" 2>&1; then
 fi
 grep -q 'rows differ' "$TEMP/foreign.out"
 grep -q 'rows = \[\["agent"\]\]' "$CONFIG"
-printf 'ok - managed activation, idempotence, and foreign-row refusal\n'
+
+# Existing multi-cell layouts are user-owned and require the documented one-time manual migration.
+printf '\n[ui.sidebar.agents]\nrows = [["state_icon", "workspace", "tab", "$agent_tree_row"]]\n' > "$CONFIG"
+cp "$CONFIG" "$TEMP/legacy-config"
+if "$ROOT/scripts/activate-managed.sh" > "$TEMP/legacy.out" 2>&1; then
+  printf 'a legacy multi-cell sidebar row was silently migrated\n' >&2; exit 1
+fi
+grep -q 'manually migrate' "$TEMP/legacy.out"
+cmp -s "$CONFIG" "$TEMP/legacy-config" || { printf 'legacy user config was changed\n' >&2; exit 1; }
+printf 'ok - managed activation, idempotence, and manual foreign-row migration boundary\n'

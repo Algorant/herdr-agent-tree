@@ -666,7 +666,7 @@ fn pass(
         *last_digest = digest;
         return Ok(());
     }
-    let desired = projection::desired(&placements);
+    let desired = projection::desired(model, &placements);
     let writes = projection::reconcile_tokens(socket, model, &desired)?;
     apply_view_state(socket, off, view)?;
     eprintln!(

@@ -122,7 +122,7 @@ sidebar_max_width = 32
 mouse_capture = true
 
 [ui.sidebar.agents]
-rows = [["state_icon", "\$agent_tree_row", "terminal_title_stripped"]]
+rows = [["state_icon", "\$agent_tree_row"]]
 
 [keys]
 prefix = "ctrl+b"
@@ -361,14 +361,16 @@ config_has_sort() {
 assert_decorations_retained() { # <label>
     [ "$(token_of "$P_R1" agent_tree_rank)" = "000001" ] || fail "$1: root-alpha rank lost while tree was off"
     [ "$(token_of "$P_S1" agent_tree_rank)" = "000002" ] || fail "$1: sub-alpha rank lost while tree was off"
-    [ "$(token_of "$P_S1" agent_tree_row)" != "-" ] || fail "$1: sub-alpha decoration lost while tree was off"
-    step "$1: agent_tree_rank/agent_tree_row still published"
+    [ "$(token_of "$P_R1" agent_tree_row)" = "root-alpha · 1" ] || fail "$1: composed root row lost/changed: $(token_of "$P_R1" agent_tree_row)"
+    [[ "$(token_of "$P_S1" agent_tree_row)" == "└─S sub-alpha"* ]] || fail "$1: composed child row lost/changed: $(token_of "$P_S1" agent_tree_row)"
+    step "$1: composed agent_tree_row values and ranks remain published"
 }
 
 # ---------------------------------------------------------------------------
 # 6. Apply the tree, then drive the shortcut native -> tree -> native.
 # ---------------------------------------------------------------------------
 log "Applying the tree projection and waiting for the validated ranks"
+herdr pane report-metadata "$P_L1" --source toggle-fixture --token "fixture_keep=kept" >/dev/null
 herdr plugin action invoke agent-tree.apply >/dev/null
 wait_ranked 2 || fail "the plugin did not rank the validated family"
 
@@ -499,9 +501,14 @@ for _ in $(seq 1 40); do
     [ "$(token_of "$P_R1" agent_tree_rank)" = "-" ] && [ "$(view_probe)" = 'false -' ] && break
     sleep 0.25
 done
-[ "$(token_of "$P_R1" agent_tree_rank)" = "-" ] || fail "clear did not remove the plugin tokens"
+[ "$(token_of "$P_R1" agent_tree_rank)" = "-" ] || fail "clear did not remove the plugin rank"
+for pane in "$P_L1" "$P_R1" "$P_S1"; do
+    [ "$(token_of "$pane" agent_tree_row)" = "-" ] || fail "clear left plugin row metadata on $pane"
+    [ "$(token_of "$pane" agent_tree_rank)" = "-" ] || fail "clear left plugin rank metadata on $pane"
+done
+[ "$(token_of "$P_L1" fixture_keep)" = "kept" ] || fail "clear removed metadata owned by toggle-fixture"
 [ "$(view_probe)" = 'false -' ] || fail "clear did not remove the plugin view"
-step "clear removed the plugin tokens and view"
+step "clear removed only plugin-owned row/rank and preserved another source token"
 
 log "The plugin wrote no configuration"
 [ "$(config_has_sort)" = no ] || fail "config.toml gained ui.agent_panel_sort"

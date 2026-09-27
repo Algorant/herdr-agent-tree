@@ -384,10 +384,9 @@ install)
   stage_root
 
   say "Configuring the Agents sidebar"
-  # One line per agent: status, tree decoration, then the agent's terminal title.
-  # Pi titles every session itself and puts the agent's own name first, so the row
-  # says *which* Worker or Subagent it is without a new plugin token or a .pi change.
-  ROWS='[["state_icon", "$agent_tree_row", "terminal_title_stripped"]]'
+  # One line per agent: status plus the plugin-composed location/tree/identity cell.
+  # The plugin owns the complete row value; do not append native location/title cells.
+  ROWS='[["state_icon", "$agent_tree_row"]]'
   if grep -qF "$MARK_BEGIN" "$CONFIG" 2>/dev/null; then
     cp -p "$CONFIG" "$CONFIG.agent-tree-backup.$(date +%Y%m%d-%H%M%S)"
     step "backed up $CONFIG"
@@ -408,13 +407,10 @@ PY
     step "updated the agent-tree sidebar rows block"
   elif grep -q "ui.sidebar.agents" "$CONFIG" 2>/dev/null; then
     step "you already have a [ui.sidebar.agents] block this plugin does not manage; leaving it byte-for-byte untouched"
-    if grep -qF '$agent_tree_row' "$CONFIG"; then
-      step "that block already references \$agent_tree_row; the tree will render"
-    else
-      step "to show the tree, add \$agent_tree_row to one of its rows, for example:"
-      printf '    rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]\n'
-      step "then reload the config: $HERDR_BIN server reload-config"
-    fi
+    step "this user-owned block was left byte-for-byte unchanged; deploy never migrates foreign rows"
+    step "after reviewing the new one-cell display, manually set its row to:"
+    printf '    rows = [["state_icon", "$agent_tree_row"]]\n'
+    step "then reload the config: $HERDR_BIN server reload-config"
   else
     cp -p "$CONFIG" "$CONFIG.agent-tree-backup.$(date +%Y%m%d-%H%M%S)"
     step "backed up $CONFIG"

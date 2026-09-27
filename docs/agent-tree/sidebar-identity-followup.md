@@ -1,6 +1,9 @@
-# Sidebar identity follow-up (local Tandem task-1)
+# Sidebar identity follow-up (historical local investigation; superseded)
 
-This is a new investigation, **not** a reopening of the archived historical task-4. That task accepted the original `state_icon` / `agent_tree_row` / `terminal_title_stripped` row after measurements at 18, 26, 32 and 36 columns; see [task-4-measurements.md](task-4-measurements.md). Herdr's row-cell allocation, rather than Agent Tree's 20-character decoration cap, causes the clipping.
+This note records an earlier local configuration choice and predates the approved one-cell
+Agent Tree implementation. It is historical context, not current guidance: the plugin now
+composes location or validated descendant identity into `$agent_tree_row`, and the managed
+sidebar row is `[["state_icon", "$agent_tree_row"]]`. See the current contract in `README.md`.
 
 ## Current local choice and reproduction
 

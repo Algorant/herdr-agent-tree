@@ -14,6 +14,11 @@ pub fn pi_row(pane_id: &str, path: &str) -> AgentRow {
         tab_id: "tab".to_string(),
         agent: "pi".to_string(),
         agent_status: String::new(),
+        name: Some(pane_id.to_string()),
+        terminal_title_stripped: None,
+        workspace_label: Some("Workspace".to_string()),
+        tab_label: Some("Tab".to_string()),
+        cleanup_only: false,
         session_path: Some(path.to_string()),
         tokens: HashMap::new(),
     }
@@ -27,6 +32,11 @@ pub fn other_row(pane_id: &str) -> AgentRow {
         tab_id: "tab".to_string(),
         agent: "codex".to_string(),
         agent_status: String::new(),
+        name: Some(pane_id.to_string()),
+        terminal_title_stripped: None,
+        workspace_label: Some("Workspace".to_string()),
+        tab_label: Some("Tab".to_string()),
+        cleanup_only: false,
         session_path: None,
         tokens: HashMap::new(),
     }

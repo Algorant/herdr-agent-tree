@@ -203,6 +203,8 @@ class Handler(socketserver.StreamRequestHandler):
             method = request.get("method")
             if method == "events.subscribe":
                 result = {"type": "subscription_started"}
+            elif method == "session.snapshot":
+                result = {"snapshot": {"agents": [], "workspaces": [], "tabs": [], "panes": []}}
             elif method == "agent.list":
                 result = {"agents": []}
             elif method in ("agent.view.clear", "agent.view.set"):
@@ -353,7 +355,7 @@ run_deploy "$USER_CONFIG_DIR" >"$SANDBOX/out5" 2>"$SANDBOX/err5" \
     || { cat "$SANDBOX/err5" >&2; fail 'deploy with a user-owned config failed'; }
 AFTER=$(sha256sum "$USER_CONFIG" | awk '{ print $1 }')
 [ "$BEFORE" = "$AFTER" ] || fail 'deploy modified a user-owned [ui.sidebar.agents] block'
-grep -qF 'rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]' "$SANDBOX/out5" \
+grep -qF 'rows = [["state_icon", "$agent_tree_row"]]' "$SANDBOX/out5" \
     || fail 'deploy did not print the exact rows fragment for a block missing $agent_tree_row'
 if grep -qF '$agent_tree_row' "$USER_CONFIG"; then
     fail 'deploy wrote into the user-owned block'
@@ -373,9 +375,11 @@ run_deploy "$USER_CONFIG_DIR2" >"$SANDBOX/out5b" 2>"$SANDBOX/err5b" \
     || { cat "$SANDBOX/err5b" >&2; fail 'deploy with a complete user config failed'; }
 AFTER2=$(sha256sum "$USER_CONFIG2" | awk '{ print $1 }')
 [ "$BEFORE2" = "$AFTER2" ] || fail 'deploy modified a complete user-owned block'
-grep -qF 'already references $agent_tree_row' "$SANDBOX/out5b" \
-    || fail 'deploy did not recognize the user block as already complete'
-pass 'a user-owned block with $agent_tree_row is left alone'
+grep -qF 'this user-owned block was left byte-for-byte unchanged' "$SANDBOX/out5b" \
+    || fail 'deploy did not preserve the user block and identify the migration boundary'
+grep -qF 'rows = [["state_icon", "$agent_tree_row"]]' "$SANDBOX/out5b" \
+    || fail 'deploy did not print the one-cell row for manual migration'
+pass 'a user-owned block is left alone and receives the explicit one-cell migration fragment'
 
 # ---------------------------------------------------------------------------
 # 6. A same-user holder that spoofs the plugin environment is still foreign: the values

@@ -1,108 +1,73 @@
-//! Decoration encoding (contract C4).
+//! Composes a validated descendant's complete one-cell sidebar value.
 //!
-//! The value always starts with a non-whitespace glyph, because Herdr trims surrounding
-//! whitespace and leading plain spaces therefore cannot encode depth. Width is capped at 20
-//! characters; the rank token is never rendered.
+//! The branch and role lead, followed immediately by the child identity. Task and attention
+//! are optional suffixes and are dropped before branch/role/name when width is constrained.
 
-/// Hard cap on the decoration value.
+/// Maximum composed descendant value. This leaves room for the status cell at narrow widths.
 pub const MAX_WIDTH: usize = 20;
-/// Worker task labels longer than this are truncated.
-const MAX_TASK: usize = 12;
-/// Depth beyond this collapses to an ellipsis marker so width stays bounded at any depth.
 const MAX_INDENT: usize = 3;
-
 const CELL: &str = "\u{2502}  "; // "│  "
 const COLLAPSED: &str = "\u{2026}  "; // "…  "
 
-/// Renders the decoration for one placement.
-///
-/// A root (depth 0) carries the attention glyph only; with no attention there is nothing to
-/// publish, which is why the return value is an `Option`.
-pub fn decoration(
+pub fn descendant(
     depth: usize,
     is_last_sibling: bool,
     role: &str,
+    name: &str,
     task_id: Option<&str>,
     attention: Option<char>,
-) -> Option<String> {
-    if depth == 0 {
-        return attention.map(|glyph| glyph.to_string());
-    }
-
+) -> String {
     let role_label = match role {
         "worker" => "W",
         "subagent" => "S",
-        _ => return None,
+        _ => return clean(name),
     };
+    let branch = if is_last_sibling { "└─" } else { "├─" };
+    let indent = indent(depth);
+    let prefix = format!("{indent}{branch}{role_label} ");
+    let name = clean(name);
+    let name = truncate(&name, MAX_WIDTH.saturating_sub(prefix.chars().count()));
+    let mut value = format!("{prefix}{name}");
 
-    let branch = if is_last_sibling {
-        "\u{2514}\u{2500}"
-    } else {
-        "\u{251c}\u{2500}"
-    }; // └─ / ├─
-    let task = task_id
-        .filter(|_| role == "worker")
-        .map(|value| truncate(value, MAX_TASK))
-        .filter(|value| !value.is_empty());
-    let hint = attention.map(|glyph| glyph.to_string());
-
-    let full = compose(
-        &indent(depth),
-        branch,
-        role_label,
-        task.as_deref(),
-        hint.as_deref(),
-    );
-    if full.chars().count() <= MAX_WIDTH {
-        return Some(full);
+    if let Some(task) = task_id.filter(|_| role == "worker") {
+        let task = clean(task);
+        if !task.is_empty() {
+            let suffix = format!(" {task}");
+            if value.chars().count() + suffix.chars().count() <= MAX_WIDTH {
+                value.push_str(&suffix);
+            }
+        }
     }
-    // Drop order: task, then attention, then collapse the indent. Branch and role remain.
-    let without_task = compose(&collapsed(depth), branch, role_label, None, hint.as_deref());
-    if without_task.chars().count() <= MAX_WIDTH {
-        return Some(without_task);
-    }
-    let without_hint = compose(&collapsed(depth), branch, role_label, None, None);
-    if without_hint.chars().count() <= MAX_WIDTH {
-        return Some(without_hint);
-    }
-    Some(truncate(&without_hint, MAX_WIDTH))
-}
-
-fn compose(
-    indent: &str,
-    branch: &str,
-    role_label: &str,
-    task: Option<&str>,
-    attention: Option<&str>,
-) -> String {
-    let mut value = String::new();
-    value.push_str(indent);
-    value.push_str(branch);
-    value.push_str(role_label);
-    if let Some(task) = task {
-        value.push(' ');
-        value.push_str(task);
-    }
-    if let Some(attention) = attention {
-        value.push(' ');
-        value.push_str(attention);
+    if let Some(glyph) = attention {
+        let suffix = format!(" {glyph}");
+        if value.chars().count() + suffix.chars().count() <= MAX_WIDTH {
+            value.push_str(&suffix);
+        }
     }
     value
 }
 
-fn indent(depth: usize) -> String {
-    if depth > MAX_INDENT {
-        return collapsed(depth);
-    }
-    CELL.repeat(depth.saturating_sub(1))
+fn clean(value: &str) -> String {
+    value
+        .chars()
+        .filter_map(|ch| {
+            if ch.is_control() {
+                ch.is_whitespace().then_some(' ')
+            } else {
+                Some(ch)
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
-fn collapsed(depth: usize) -> String {
+fn indent(depth: usize) -> String {
     if depth > MAX_INDENT {
-        format!("{COLLAPSED}{CELL}{CELL}")
-    } else {
-        indent(depth)
+        return COLLAPSED.to_string();
     }
+    CELL.repeat(depth.saturating_sub(1))
 }
 
 fn truncate(value: &str, limit: usize) -> String {
@@ -113,143 +78,77 @@ fn truncate(value: &str, limit: usize) -> String {
 mod tests {
     use super::*;
 
-    fn rendered(
-        depth: usize,
-        is_last_sibling: bool,
-        role: &str,
-        task: Option<&str>,
-        attention: Option<char>,
-    ) -> String {
-        decoration(depth, is_last_sibling, role, task, attention)
-            .expect("non-root placements with a known role always render")
+    #[test]
+    fn branch_role_then_child_identity_is_the_leading_display() {
+        assert_eq!(
+            descendant(1, true, "worker", "worker-alpha", None, None),
+            "└─W worker-alpha"
+        );
+        assert_eq!(
+            descendant(1, false, "subagent", "lint-helper", None, None),
+            "├─S lint-helper"
+        );
+        assert_eq!(
+            descendant(2, true, "subagent", "lint-helper", None, None),
+            "│  └─S lint-helper"
+        );
+        assert_eq!(
+            descendant(3, false, "worker", "worker", None, None),
+            "│  │  ├─W worker"
+        );
+        assert_eq!(
+            descendant(4, true, "worker", "worker", None, None),
+            "…  └─W worker"
+        );
     }
 
     #[test]
-    fn root_carries_attention_only() {
-        assert_eq!(decoration(0, true, "worker", Some("task-1"), None), None);
+    fn identity_precedes_optional_task_and_attention() {
         assert_eq!(
-            decoration(0, false, "subagent", Some("task-1"), Some('?')),
-            Some("?".to_string())
+            descendant(1, true, "worker", "a", Some("task-7"), Some('▸')),
+            "└─W a task-7 ▸"
         );
-        assert_eq!(
-            decoration(0, true, "worker", None, Some('▸')),
-            Some("▸".to_string())
+        let value = descendant(
+            1,
+            true,
+            "worker",
+            "a-child-with-long-name",
+            Some("task-123456"),
+            Some('?'),
         );
-    }
-
-    #[test]
-    fn depth_indent_branch_and_role_grammar() {
-        assert_eq!(rendered(1, true, "worker", None, None), "└─W");
-        assert_eq!(rendered(1, false, "worker", None, None), "├─W");
-        assert_eq!(rendered(2, true, "subagent", None, None), "│  └─S");
-        assert_eq!(rendered(3, false, "worker", None, None), "│  │  ├─W");
-        assert_eq!(rendered(4, true, "worker", None, None), "…  │  │  └─W");
-        assert_eq!(rendered(9, true, "worker", None, None), "…  │  │  └─W");
-    }
-
-    #[test]
-    fn unknown_roles_never_render() {
-        assert_eq!(decoration(1, true, "reviewer", None, None), None);
-        assert_eq!(decoration(2, false, "", None, None), None);
-    }
-
-    #[test]
-    fn worker_task_is_truncated_to_twelve_and_subagents_ignore_it() {
-        assert_eq!(
-            rendered(1, true, "worker", Some("task-1234567890"), None),
-            "└─W task-1234567"
-        );
-        assert_eq!(
-            rendered(1, true, "worker", Some("task-1234567890123"), None),
-            "└─W task-1234567"
-        );
-        assert_eq!(
-            rendered(1, true, "subagent", Some("task-1234567890123"), None),
-            "└─S"
-        );
-        assert_eq!(rendered(1, true, "worker", Some(""), None), "└─W");
-    }
-
-    #[test]
-    fn attention_is_appended_when_it_fits() {
-        assert_eq!(
-            rendered(1, true, "worker", Some("task-1"), Some('?')),
-            "└─W task-1 ?"
-        );
-        assert_eq!(rendered(1, false, "subagent", None, Some('!')), "├─S !");
-    }
-
-    #[test]
-    fn over_cap_drops_the_task_first_and_keeps_branch_and_role() {
-        // 9 (collapsed indent) + 3 (branch/role) + 1 + 12 (task) + 2 (hint) = 27.
-        let value = rendered(4, true, "worker", Some("task-1234567890123"), Some('?'));
-        assert_eq!(value, "…  │  │  └─W ?");
+        assert!(value.starts_with("└─W a-child-with-lon"), "{value:?}");
         assert!(
-            !value.contains("task"),
-            "the task is the first thing dropped"
+            !value.contains("task-"),
+            "task must be dropped before identity: {value:?}"
         );
-
-        let value = rendered(7, false, "subagent", Some("task-1234567890"), None);
-        assert_eq!(value, "…  │  │  ├─S");
+        assert!(
+            !value.contains('?'),
+            "attention must be dropped before identity: {value:?}"
+        );
     }
 
     #[test]
-    fn every_rendered_value_respects_the_cap_and_never_leads_with_whitespace() {
-        let long = "x".repeat(64);
-        let tasks: [Option<&str>; 4] = [
-            None,
-            Some("t"),
-            Some("task-1234567890123"),
-            Some(long.as_str()),
-        ];
+    fn values_are_single_line_bounded_and_do_not_emit_untrusted_controls() {
         for depth in 0..12 {
-            for is_last_sibling in [true, false] {
-                for role in ["worker", "subagent", "reviewer"] {
-                    for task in tasks {
-                        for attention in [None, Some('?')] {
-                            if let Some(value) =
-                                decoration(depth, is_last_sibling, role, task, attention)
-                            {
-                                assert!(
-                                    value.chars().count() <= MAX_WIDTH,
-                                    "over cap at depth {depth}: {value:?}"
-                                );
-                                assert!(
-                                    !value.starts_with(char::is_whitespace),
-                                    "leading whitespace at depth {depth}: {value:?}"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn decoration_never_emits_a_full_hash_or_untruncated_task() {
-        let hash = "a".repeat(64);
-        let value = rendered(1, true, "worker", Some(&hash), Some('?'));
-        assert_eq!(value, "└─W aaaaaaaaaaaa ?");
-        assert!(!value.contains(&hash));
-        assert!(value.chars().count() <= MAX_WIDTH);
-    }
-
-    #[test]
-    fn decoration_never_emits_a_path_routing_id_delivery_id_or_report_content() {
-        let adversarial = [
-            "/sessions/secret.jsonl",
-            "route-0123456789abcdef0123456789abcdef",
-            "delivery-0123456789abcdef0123456789abcdef",
-            "report: the child failed because of a secret",
-        ];
-        for value in adversarial {
-            let rendered = rendered(1, true, "worker", Some(value), Some('?'));
-            assert!(
-                !rendered.contains(value),
-                "full metadata value leaked: {rendered:?}"
+            let value = descendant(
+                depth,
+                true,
+                "worker",
+                "child\nname\u{1b}[31m",
+                Some("task\nsecret"),
+                Some('?'),
             );
-            assert!(rendered.chars().count() <= MAX_WIDTH, "{rendered:?}");
+            assert!(value.chars().count() <= MAX_WIDTH, "{value:?}");
+            assert!(!value.chars().any(char::is_control), "{value:?}");
+            assert!(value.contains("child name"), "{value:?}");
         }
+    }
+
+    #[test]
+    fn unknown_role_does_not_fabricate_a_branch() {
+        assert_eq!(
+            descendant(1, true, "reviewer", "reviewer-name", None, None),
+            "reviewer-name"
+        );
     }
 }

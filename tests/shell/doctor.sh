@@ -63,7 +63,7 @@ cat >"$LOCAL_CONFIG/config.toml" <<'TOML'
 sidebar_width = 32
 
 [ui.sidebar.agents]
-rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
+rows = [["state_icon", "$agent_tree_row"]]
 
 [[keys.command]]
 key = "prefix+t"
@@ -206,6 +206,8 @@ class Handler(socketserver.StreamRequestHandler):
             method = request.get("method")
             if method == "events.subscribe":
                 result = {"type": "subscription_started"}
+            elif method == "session.snapshot":
+                result = {"snapshot": {"agents": [], "workspaces": [], "tabs": [], "panes": []}}
             elif method == "agent.list":
                 result = {"agents": []}
             elif method in ("agent.view.clear", "agent.view.set"):
