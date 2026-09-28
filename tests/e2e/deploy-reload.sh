@@ -207,7 +207,81 @@ holder_pid() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. First deploy: install, stage, register, reload. It must return already verified.
+# 1. Managed-to-local dogfood transition. Herdr disable/unlink only change registry
+#    state; they do not stop a detached subscriber. The operator disables the plugin,
+#    verifies and terminates the exact managed subscriber, then retries local deploy.
+# ---------------------------------------------------------------------------
+log "Managed-to-local transition"
+MANAGED_ROOT=$XDG_CONFIG_HOME/herdr/plugins/github/agent-tree-dogfood
+mkdir -p "$MANAGED_ROOT/src"
+cp "$ROOT/herdr-plugin.toml" "$ROOT/README.md" "$MANAGED_ROOT/"
+cp "$RELEASE" "$MANAGED_ROOT/src/agent-tree"
+chmod 755 "$MANAGED_ROOT/src/agent-tree"
+herdr plugin link "$MANAGED_ROOT" --enabled >/dev/null
+herdr plugin action invoke agent-tree.apply >/dev/null
+for _ in $(seq 1 100); do
+    [ -n "$(holder_pid 2>/dev/null || true)" ] && break
+    sleep 0.1
+done
+managed_pid=$(holder_pid) || fail "managed subscriber did not acquire its lock"
+[ "$(readlink "/proc/$managed_pid/exe")" = "$MANAGED_ROOT/src/agent-tree" ] \
+    || fail "managed subscriber executable is not the registered root"
+cp "$XDG_CONFIG_HOME/herdr/config.toml" "$TMP/config-before-refusal"
+if deploy >"$TMP/transition-refusal.out" 2>"$TMP/transition-refusal.err"; then
+    fail "managed-to-local deploy unexpectedly passed preflight"
+fi
+grep -q "subscriber pid $managed_pid" "$TMP/transition-refusal.err" \
+    || fail "preflight did not identify the managed subscriber"
+cmp -s "$TMP/config-before-refusal" "$XDG_CONFIG_HOME/herdr/config.toml" \
+    || fail "preflight refusal changed config"
+[ ! -e "$STAGE" ] || fail "preflight refusal staged files"
+root_before=$(herdr plugin list --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["plugins"][0]["plugin_root"])')
+[ "$root_before" = "$MANAGED_ROOT" ] || fail "preflight refusal changed registration"
+step "refusal preserved managed registration, live subscriber, config and absent stage"
+
+# Verified operator sequence from the refusal output: disable does not kill it, so validate
+# identity again before SIGTERM. This is an isolated Herdr 0.9.1 server and socket.
+herdr plugin disable agent-tree >/dev/null
+kill -0 "$managed_pid" 2>/dev/null || fail "plugin disable unexpectedly stopped the subscriber"
+if ! python3 - "$managed_pid" "$MANAGED_ROOT/src/agent-tree" "$HERDR_SOCKET_PATH" "$STATE_PLUGIN" <<'PY'
+import os, sys
+pid, expected_exe, socket, state = int(sys.argv[1]), os.path.realpath(sys.argv[2]), sys.argv[3], os.path.realpath(sys.argv[4])
+if os.stat('/proc/%d' % pid).st_uid != os.geteuid():
+    raise SystemExit('subscriber uid differs from current uid')
+argv = [part.decode() for part in open('/proc/%d/cmdline' % pid, 'rb').read().split(b'\0') if part]
+env = dict(entry.decode().split('=', 1) for entry in open('/proc/%d/environ' % pid, 'rb').read().split(b'\0') if b'=' in entry)
+if len(argv) < 2 or os.path.basename(argv[0]) != 'agent-tree' or argv[1] != 'subscriber':
+    raise SystemExit('argv is not agent-tree subscriber')
+if os.path.realpath('/proc/%d/exe' % pid) != expected_exe:
+    raise SystemExit('executable differs from registered managed binary')
+if env.get('HERDR_PLUGIN_ID') != 'agent-tree' or env.get('HERDR_SOCKET_PATH') != socket:
+    raise SystemExit('plugin id or socket identity differs')
+if os.path.realpath(env.get('HERDR_PLUGIN_STATE_DIR', '')) != state:
+    raise SystemExit('state directory identity differs')
+PY
+then
+    fail "managed subscriber identity changed before the operator SIGTERM"
+fi
+kill -TERM "$managed_pid"
+for _ in $(seq 1 100); do
+    kill -0 "$managed_pid" 2>/dev/null || break
+    sleep 0.1
+done
+kill -0 "$managed_pid" 2>/dev/null && fail "verified managed subscriber did not exit after SIGTERM"
+[ -z "$(holder_pid 2>/dev/null || true)" ] || fail "managed subscriber lock remained after SIGTERM"
+if ! deploy >"$TMP/transition-deploy.out" 2>"$TMP/transition-deploy.err"; then
+    cat "$TMP/transition-deploy.err" >&2
+    fail "local deploy after the verified operator stop failed"
+fi
+grep -q 'verified (pid' "$TMP/transition-deploy.out" || fail "transition deploy did not report subscriber verification"
+transition_pid=$(verify_subscriber "after managed-to-local transition") \
+    || fail "transition deploy did not leave exactly one hash-verified staged subscriber"
+registration=$(herdr plugin list --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["plugins"][0]["plugin_root"])')
+[ "$registration" = "$STAGE" ] || fail "transition registration is $registration, expected $STAGE"
+step "disable + verified SIGTERM + retry succeeded with one hash-verified staged subscriber pid $transition_pid"
+
+# ---------------------------------------------------------------------------
+# 2. First deploy: install, stage, register, reload. It must return already verified.
 # ---------------------------------------------------------------------------
 log "First deploy"
 if ! deploy >"$TMP/deploy1.out" 2>"$TMP/deploy1.err"; then

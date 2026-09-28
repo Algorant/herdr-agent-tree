@@ -6,6 +6,10 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Local dogfood deploy refuses before building, staging, changing config, or relinking when the registered managed checkout still owns the socket's subscriber. Herdr 0.9.1 `herdr plugin disable agent-tree` and `herdr plugin unlink agent-tree` leave its detached subscriber running; disable the plugin, verify the reported PID is still the same-UID `agent-tree subscriber` with the reported managed executable and matching `HERDR_SOCKET_PATH`, run `kill -TERM <pid>`, wait for it to exit, then retry the printed deploy command. Deploy never signals a process.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

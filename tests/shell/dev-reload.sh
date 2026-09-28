@@ -273,7 +273,43 @@ assert_staged_exe() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. First install: one subscriber owning the lock from the staged build.
+# 1. Managed-to-local transition refusal: the verified managed subscriber and registration
+#    remain untouched, and refusal happens before a release build, stage or config edit.
+# ---------------------------------------------------------------------------
+printf '== managed-to-local preflight refusal\n'
+MANAGED_ROOT=$DATA/plugins/github/agent-tree-managed
+mkdir -p "$MANAGED_ROOT/target/release"
+cp "$PREBUILT" "$MANAGED_ROOT/target/release/agent-tree"
+chmod 755 "$MANAGED_ROOT/target/release/agent-tree"
+printf '%s\n' "$MANAGED_ROOT" >"$HERDR_DIR/stage"
+env HERDR_PLUGIN_ID=agent-tree HERDR_PLUGIN_ROOT="$MANAGED_ROOT" \
+    HERDR_PLUGIN_STATE_DIR="$STATE" HERDR_SOCKET_PATH="$SOCKET" \
+    "$MANAGED_ROOT/target/release/agent-tree" subscriber >"$SANDBOX/managed-preflight.log" 2>&1 </dev/null &
+MANAGED_PID=$!
+i=0
+while [ ! -f "$(lock_path "$SOCKET")" ]; do
+    i=$((i + 1)); [ "$i" -lt 100 ] || fail 'managed subscriber did not acquire lock for preflight test'
+    sleep 0.1
+done
+cp "$CONFIG/herdr/config.toml" "$SANDBOX/preflight-config"
+if run_deploy "$CONFIG" >"$SANDBOX/preflight-out" 2>"$SANDBOX/preflight-err"; then
+    fail 'managed-to-local deploy unexpectedly succeeded'
+fi
+grep -q 'Refusing before build, staging, config changes or relinking' "$SANDBOX/preflight-err" \
+    || fail 'managed-to-local refusal did not explain its preflight boundary'
+[ "$(cat "$HERDR_DIR/stage")" = "$MANAGED_ROOT" ] || fail 'preflight refusal changed the registration'
+[ ! -e "$STAGE" ] || fail 'preflight refusal created a staged root'
+cmp -s "$SANDBOX/preflight-config" "$CONFIG/herdr/config.toml" \
+    || fail 'preflight refusal changed config'
+kill -0 "$MANAGED_PID" 2>/dev/null || fail 'preflight refusal stopped the managed subscriber'
+pass 'managed subscriber transition refuses before build/stage/config/relink and leaves prior install coherent'
+kill "$MANAGED_PID" 2>/dev/null || true
+wait_dead "$MANAGED_PID" || fail 'managed subscriber did not stop after preflight test'
+rm -f "$(lock_path "$SOCKET")"
+rm -f "$HERDR_DIR/stage"
+
+# ---------------------------------------------------------------------------
+# 2. First install: one subscriber owning the lock from the staged build.
 #    The fake herdr starts the action asynchronously (1s default delay), so every
 #    assertion below holds only because deploy waits for the action's terminal log record
 #    and verifies the running image before it returns.

@@ -84,6 +84,62 @@ registered_path() {
     | sed -n 's/.*\[local:\(.*\)\].*/\1/p' | head -1 || true
 }
 
+refuse_managed_subscriber_transition() {
+  local current
+  current=$(registered_path)
+  [ -n "$current" ] || return 0
+  [ "$current" != "$STAGE" ] || return 0
+  local detail
+  detail=$(python3 - "$current" "$SOCKET" 2>&1 <<'PY'
+import os, sys
+
+root, socket = (os.path.realpath(value) for value in sys.argv[1:])
+uid = os.geteuid()
+for name in os.listdir('/proc'):
+    if not name.isdigit():
+        continue
+    pid = int(name)
+    proc = '/proc/%d' % pid
+    try:
+        if os.stat(proc).st_uid != uid:
+            continue
+    except FileNotFoundError:
+        continue  # The process exited after the /proc directory listing.
+    except OSError as exc:
+        raise SystemExit('cannot inspect %s ownership: %s' % (proc, exc))
+    try:
+        raw = open(proc + '/cmdline', 'rb').read()
+        argv = [part.decode('utf-8', 'replace') for part in raw.split(b'\0') if part]
+        if len(argv) < 2 or os.path.basename(argv[0]) != 'agent-tree' or argv[1] != 'subscriber':
+            continue
+        env = {}
+        for entry in open(proc + '/environ', 'rb').read().split(b'\0'):
+            if b'=' in entry:
+                key, value = entry.split(b'=', 1)
+                env[key.decode('utf-8', 'replace')] = value.decode('utf-8', 'replace')
+        exe = os.path.realpath(proc + '/exe')
+    except FileNotFoundError:
+        continue  # The process exited while its identity was being read.
+    except OSError as exc:
+        raise SystemExit('cannot inspect same-uid process %s identity: %s' % (pid, exc))
+    managed_binaries = (os.path.join(root, 'src', 'agent-tree'),
+                        os.path.join(root, 'target', 'release', 'agent-tree'))
+    if (env.get('HERDR_PLUGIN_ID') == 'agent-tree'
+            and env.get('HERDR_SOCKET_PATH') == socket
+            and exe in managed_binaries):
+        print(pid)
+        print(exe)
+        break
+PY
+) || fail "cannot inspect running subscribers before transition: $detail"
+  if [ -n "$detail" ]; then
+    local pid executable
+    pid=$(printf '%s\n' "$detail" | head -1)
+    executable=$(printf '%s\n' "$detail" | head -2 | tail -1)
+    fail "the registered managed checkout ($current) still owns subscriber pid $pid for this Herdr socket. Refusing before build, staging, config changes or relinking; no process was signaled. Herdr 0.9.1 plugin disable/unlink do not stop its detached subscriber. Run: herdr plugin disable agent-tree; verify pid $pid is still the same-UID agent-tree subscriber with executable $executable and HERDR_SOCKET_PATH=$SOCKET; then run: kill -TERM $pid; wait until it exits; then retry with: \"$0\" --herdr \"$HERDR_BIN\" --prefix \"$PREFIX\"."
+  fi
+}
+
 build_release() {
   say "Building the release binary"
   cargo build --locked --release --manifest-path "$PLUGIN/Cargo.toml" 2>&1 | sed 's/^/  /'
@@ -361,6 +417,7 @@ PY
   ;;
 
 install)
+  refuse_managed_subscriber_transition
   say "Installing agent-tree as a development install from this checkout"
   echo "  This is not the normal user path; use 'herdr plugin install Algorant/herdr-agent-tree --ref <tag>' (see README.md)."
   echo "  This will build a release binary, stage a self-contained plugin root at:"
