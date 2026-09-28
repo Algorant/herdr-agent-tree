@@ -4,6 +4,7 @@
 use crate::transport::{hex, AgentRow};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::path::Path;
 
 /// Lowercase hex SHA-256 over the exact bytes of compact JSON `["pi","path",<session>]`.
 pub fn self_hash(session_path: &str) -> String {
@@ -11,6 +12,37 @@ pub fn self_hash(session_path: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(tuple.as_bytes());
     hex(&hasher.finalize())
+}
+
+/// Stable, endpoint-scoped rank namespace. Machine ID and socket path are inputs only;
+/// neither is returned or published. The canonical socket path distinguishes sessions on
+/// one host while remaining stable across subscriber restarts.
+pub fn endpoint_rank_prefix(machine_id: &str, socket_path: &Path) -> Result<String, String> {
+    let machine_id = machine_id.strip_suffix('\n').unwrap_or(machine_id);
+    let machine_id = machine_id.strip_suffix('\r').unwrap_or(machine_id);
+    if machine_id.len() != 32
+        || !machine_id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b) || (b'A'..=b'F').contains(&b))
+        || machine_id.bytes().all(|b| b == b'0')
+    {
+        return Err(
+            "/etc/machine-id is missing or invalid; endpoint rank identity unavailable".into(),
+        );
+    }
+    let canonical_socket = socket_path.canonicalize().map_err(|_| {
+        "HERDR_SOCKET_PATH cannot be canonicalized; endpoint rank identity unavailable".to_string()
+    })?;
+    let tuple = json!([
+        "herdr-agent-tree-endpoint-v1",
+        machine_id.to_ascii_lowercase(),
+        canonical_socket.to_string_lossy()
+    ])
+    .to_string();
+    let mut hasher = Sha256::new();
+    hasher.update(tuple.as_bytes());
+    let digest = hex(&hasher.finalize());
+    Ok(format!("h{}", &digest[..16]))
 }
 
 pub fn is_lower_hex64(value: &str) -> bool {
@@ -91,6 +123,63 @@ mod tests {
         for path in ["/", "", "x", "/a/b/c/d/e/f/g/h/i/j"] {
             assert_eq!(self_hash(path).len(), 64, "{path:?}");
         }
+    }
+
+    #[test]
+    fn endpoint_rank_prefix_is_stable_and_names_machine_and_socket_pair() {
+        let test_dir =
+            std::env::temp_dir().join(format!("agent-tree-identity-{}", std::process::id()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let socket_a = test_dir.join("a.sock");
+        let socket_b = test_dir.join("b.sock");
+        std::fs::write(&socket_a, []).unwrap();
+        std::fs::write(&socket_b, []).unwrap();
+        let machine_a = "0123456789abcdef0123456789abcdef";
+        let machine_b = "abcdef0123456789abcdef0123456789";
+        let a = endpoint_rank_prefix(machine_a, &socket_a).unwrap();
+        assert_eq!(
+            a,
+            endpoint_rank_prefix(machine_a, &socket_a).unwrap(),
+            "subscriber restart stability"
+        );
+        assert_ne!(
+            a,
+            endpoint_rank_prefix(machine_a, &socket_b).unwrap(),
+            "same host, distinct endpoints"
+        );
+        assert_ne!(
+            a,
+            endpoint_rank_prefix(machine_b, &socket_a).unwrap(),
+            "distinct hosts, same socket path"
+        );
+        assert_eq!(a.len(), 17);
+        assert!(!a.contains(machine_a));
+        assert!(!a.contains(&socket_a.to_string_lossy().to_string()));
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn endpoint_rank_prefix_rejects_missing_or_invalid_identity_inputs() {
+        let socket = Path::new("/tmp/agent-tree-test.sock");
+        for machine_id in [
+            "",
+            "unknown",
+            &format!(" {} ", "a".repeat(32)),
+            &format!("{}\n\n", "a".repeat(32)),
+            &"0".repeat(32),
+            &"g".repeat(32),
+            &"a".repeat(31),
+        ] {
+            assert!(
+                endpoint_rank_prefix(machine_id, socket).is_err(),
+                "{machine_id:?}"
+            );
+        }
+        assert!(endpoint_rank_prefix(
+            "0123456789abcdef0123456789abcdef",
+            Path::new("/nonexistent/socket")
+        )
+        .is_err());
     }
 
     #[test]

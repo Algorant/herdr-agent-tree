@@ -359,8 +359,8 @@ config_has_sort() {
 }
 
 assert_decorations_retained() { # <label>
-    [ "$(token_of "$P_R1" agent_tree_rank)" = "000001" ] || fail "$1: root-alpha rank lost while tree was off"
-    [ "$(token_of "$P_S1" agent_tree_rank)" = "000002" ] || fail "$1: sub-alpha rank lost while tree was off"
+    [[ "$(token_of "$P_R1" agent_tree_rank)" =~ ^h[0-9a-f]{16}-000001$ ]] || fail "$1: root-alpha rank lost while tree was off"
+    [[ "$(token_of "$P_S1" agent_tree_rank)" =~ ^h[0-9a-f]{16}-000002$ ]] || fail "$1: sub-alpha rank lost while tree was off"
     [ "$(token_of "$P_R1" agent_tree_branch)" = "-" ] || fail "$1: root unexpectedly has a branch marker"
     [ "$(token_of "$P_S1" agent_tree_branch)" = "└─S sub-alpha" ] || fail "$1: Subagent branch/name changed: $(token_of "$P_S1" agent_tree_branch)"
     [ "$(token_of "$P_R1" agent_tree_row)" = "-" ] || fail "$1: legacy composed token was republished"

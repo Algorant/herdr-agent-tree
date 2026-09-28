@@ -8,6 +8,7 @@ semantic versioning.
 
 ### Changed
 
+- `agent_tree_rank` now prefixes each six-digit preorder rank with a stable endpoint namespace derived from a domain-separated digest of the validated machine ID and canonical Herdr socket path. Missing/invalid endpoint identity clears only plugin-owned tokens and the source-owned view rather than silently leaving stale numeric ranks active. Mixed-version rollout limits are documented in `docs/agent-tree/endpoint-rank-rollout.md`.
 - The managed Agents row is now `[["state_icon", "$agent_tree_branch", "workspace", "tab"]]`. The plugin publishes the new `agent_tree_branch` token, never writes the old composed `agent_tree_row`, leaves roots and ordinary/non-Pi agents to Herdr's native workspace/tab cells, shows Workers as branch/role markers only, and adds a Subagent's own name capped at 12 terminal display columns.
 - User-owned rows using either previous layout — 0.1.0 `["state_icon", "$agent_tree_row", "terminal_title_stripped"]` or 0.2.0 `["state_icon", "$agent_tree_row"]` — are never rewritten. Deploy and activation print the exact replacement row for manual migration. Upgrade cleanup clears stale `agent_tree_row` together with `agent_tree_branch` and `agent_tree_rank`, preserving every other source's metadata.
 

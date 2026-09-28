@@ -381,6 +381,15 @@ wait_ranked() { # <count> -> 0 if reached within ~20s
 
 wait_ranked 4 || fail "expected root, Worker and two direct Subagents to be ranked"
 
+log "Verifying stale numeric rank migration"
+herdr pane report-metadata "$P_R1" --source agent-tree --token 'agent_tree_rank=000001' >/dev/null
+for _ in $(seq 1 40); do
+    [[ "$(rank_of "$P_R1")" =~ ^h[0-9a-f]{16}-000001$ ]] && break
+    sleep 0.25
+done
+[[ "$(rank_of "$P_R1")" =~ ^h[0-9a-f]{16}-000001$ ]] || fail "stale numeric rank was not migrated: $(rank_of "$P_R1")"
+step "stale numeric rank migrated to endpoint-qualified format"
+
 log "Verifying upgrade clears a stale 0.2.0 composed-row token"
 herdr pane report-metadata "$P_L1" --source agent-tree \
     --token 'agent_tree_row=herdr-agent-tree · 1' >/dev/null
@@ -398,16 +407,17 @@ step "stale 0.2.0 row cleared; other metadata preserved: $tokens"
 log "Verifying real identity validation"
 expect_rank() { # <pane> <expected> <label>
     local got; got=$(rank_of "$1")
-    [ "$got" = "$2" ] || fail "$3: expected rank $2, got $got"
-    step "$3 rank $2"
+    [[ "$got" == *"$2" ]] || fail "$3: expected rank suffix $2, got $got"
+    [[ "$got" =~ ^h[0-9a-f]{16}-[0-9]{6}$ ]] || fail "$3: invalid endpoint rank format: $got"
+    step "$3 rank $got"
 }
-expect_rank "$P_R1" 000001 "root-alpha"
+expect_rank "$P_R1" "-000001" "root-alpha"
 for pane in "$P_W1" "$P_S1" "$P_S2"; do
     [ "$(rank_of "$pane")" != "-" ] || fail "validated direct child $pane was not ranked"
 done
 [ "$(rank_of "$P_R2")" = "-" ] || fail "root-beta without children must remain unranked"
 child_ranks=$(printf '%s\n' "$(rank_of "$P_W1")" "$(rank_of "$P_S1")" "$(rank_of "$P_S2")" | sort | paste -sd, -)
-[ "$child_ranks" = "000002,000003,000004" ] || fail "direct-child ranks are not a complete preorder tail: $child_ranks"
+[ "$(printf '%s\n' "$(rank_of "$P_W1")" "$(rank_of "$P_S1")" "$(rank_of "$P_S2")" | sed -E 's/^.*-([0-9]{6})$/\1/' | sort | paste -sd, -)" = "000002,000003,000004" ] || fail "direct-child ranks are not a complete preorder tail: $child_ranks"
 for pair in "$P_L1=lone-1" "$P_L2=lone-2" "$P_X1=codex-1" "$P_R2=root-beta"; do
     local_pane=${pair%%=*}; local_name=${pair##*=}
     [ "$(rank_of "$local_pane")" = "-" ] || fail "$local_name must stay unranked"

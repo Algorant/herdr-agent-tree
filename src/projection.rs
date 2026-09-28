@@ -65,7 +65,11 @@ fn token_snapshot(model: &Model) -> Vec<TokenSnapshot> {
         .collect()
 }
 
-pub fn desired(model: &Model, placements: &[Placement]) -> HashMap<String, Desired> {
+pub fn desired(
+    model: &Model,
+    placements: &[Placement],
+    endpoint_prefix: &str,
+) -> HashMap<String, Desired> {
     let placements: HashMap<&str, &Placement> = placements
         .iter()
         .map(|placement| (placement.pane_id.as_str(), placement))
@@ -95,7 +99,7 @@ pub fn desired(model: &Model, placements: &[Placement]) -> HashMap<String, Desir
                 branch,
                 rank: placement
                     .filter(|_| !row.cleanup_only)
-                    .map(|placement| format!("{:06}", placement.rank)),
+                    .map(|placement| format!("{endpoint_prefix}-{:06}", placement.rank)),
             },
         );
     }
@@ -363,22 +367,42 @@ mod tests {
     }
 
     #[test]
-    fn ranks_are_six_digit_and_lexicographic_order_matches_numeric_order() {
+    fn endpoint_rank_format_preserves_lexical_preorder_and_fits_herdr_token_limit() {
         assert_eq!(MAX_RANKS, 999_999);
         let mut previous: Option<String> = None;
         for rank in 1..=1_000u32 {
             let model = model(vec![crate::testutil::pi_row("p", "/s/p")]);
-            let mut map = desired(&model, &[placement("p", 0, rank)]);
+            let mut map = desired(&model, &[placement("p", 0, rank)], "h0123456789abcdef");
             let want = map.remove("p").unwrap().rank.unwrap();
-            assert_eq!(want, format!("{rank:06}"));
-            assert_eq!(want.len(), 6);
+            assert_eq!(want, format!("h0123456789abcdef-{rank:06}"));
+            assert!(want.len() <= 80);
             if let Some(previous) = previous {
                 assert!(previous < want, "{previous} must sort before {want}");
             }
             previous = Some(want);
         }
-        assert_eq!(format!("{:06}", MAX_RANKS), "999999");
-        assert_eq!(format!("{:06}", MAX_RANKS + 1).len(), 7);
+        assert!(format!("h0123456789abcdef-{:06}", MAX_RANKS).ends_with("999999"));
+        assert!(format!("h{}-{:06}", "a".repeat(64), MAX_RANKS).len() < 80);
+    }
+
+    #[test]
+    fn endpoint_prefixes_keep_each_family_contiguous_in_lexical_order() {
+        let mut ranks = vec![
+            "hbbbbbbbbbbbbbbbb-000001",
+            "haaaaaaaaaaaaaaaa-000003",
+            "hbbbbbbbbbbbbbbbb-000002",
+            "haaaaaaaaaaaaaaaa-000001",
+        ];
+        ranks.sort();
+        assert_eq!(
+            ranks,
+            [
+                "haaaaaaaaaaaaaaaa-000001",
+                "haaaaaaaaaaaaaaaa-000003",
+                "hbbbbbbbbbbbbbbbb-000001",
+                "hbbbbbbbbbbbbbbbb-000002",
+            ]
+        );
     }
 
     #[test]
@@ -394,8 +418,11 @@ mod tests {
             crate::testutil::pi_row("linked", "/s/linked"),
             crate::testutil::pi_row("unlinked", "/s/unlinked"),
         ]);
-        let map = desired(&model, &[placement("linked", 0, 1)]);
-        assert_eq!(map["linked"].rank.as_deref(), Some("000001"));
+        let map = desired(&model, &[placement("linked", 0, 1)], "h0123456789abcdef");
+        assert_eq!(
+            map["linked"].rank.as_deref(),
+            Some("h0123456789abcdef-000001")
+        );
         assert_eq!(map["linked"].branch, None, "roots carry no marker");
         assert_eq!(map["unlinked"].rank, None);
         assert_eq!(
@@ -407,16 +434,20 @@ mod tests {
     #[test]
     fn roots_publish_only_the_rank_and_leave_native_workspace_tab_cells_to_herdr() {
         let model = model(vec![crate::testutil::pi_row("root", "/s/root")]);
-        let mut map = desired(&model, &[placement("root", 0, 1)]);
+        let mut map = desired(&model, &[placement("root", 0, 1)], "h0123456789abcdef");
         let root = map.remove("root").unwrap();
         assert_eq!(root.branch, None);
-        assert_eq!(root.rank.as_deref(), Some("000001"));
+        assert_eq!(root.rank.as_deref(), Some("h0123456789abcdef-000001"));
     }
 
     #[test]
     fn worker_decoration_contains_only_the_marker() {
         let worker = crate::testutil::linked("worker", "/s/worker", "worker", "parent");
-        let mut map = desired(&model(vec![worker]), &[placement("worker", 1, 2)]);
+        let mut map = desired(
+            &model(vec![worker]),
+            &[placement("worker", 1, 2)],
+            "h0123456789abcdef",
+        );
         assert_eq!(map.remove("worker").unwrap().branch.as_deref(), Some("└─W"));
     }
 
@@ -430,6 +461,7 @@ mod tests {
                 role: "subagent".to_string(),
                 ..placement("sub", 1, 2)
             }],
+            "h0123456789abcdef",
         );
         assert_eq!(
             map.remove("sub").unwrap().branch.as_deref(),
@@ -454,7 +486,7 @@ mod tests {
         );
         let mut orphan = orphan;
         orphan.cleanup_only = true;
-        let desired = desired(&model(vec![orphan]), &[]);
+        let desired = desired(&model(vec![orphan]), &[], "h0123456789abcdef");
         assert_eq!(desired["released"].branch, None);
         assert_eq!(desired["released"].rank, None);
     }
@@ -471,6 +503,7 @@ mod tests {
                 role: "subagent".to_string(),
                 ..placement("sub", 1, 1)
             }],
+            "h0123456789abcdef",
         );
         assert_eq!(map["sub"].branch.as_deref(), Some("└─S live-sideba…"));
         assert_eq!(map["codex"].branch, None);

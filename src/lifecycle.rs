@@ -653,6 +653,16 @@ fn pass(
     let rows = transport::fetch_rows(socket)?;
     model.install(rows);
 
+    let endpoint_prefix = match endpoint_rank_prefix(socket) {
+        Ok(prefix) => prefix,
+        Err(identity_error) => {
+            // A stale numeric rank under the tree view would silently reintroduce cross-
+            // endpoint collisions. Clear only this plugin's tokens and source-owned view.
+            projection::clear_own_tokens(socket, model);
+            projection::clear_view(socket)?;
+            return Err(identity_error);
+        }
+    };
     let digest = model.digest();
     if digest == *last_digest {
         return Ok(());
@@ -666,7 +676,7 @@ fn pass(
         *last_digest = digest;
         return Ok(());
     }
-    let desired = projection::desired(model, &placements);
+    let desired = projection::desired(model, &placements, &endpoint_prefix);
     let writes = projection::reconcile_tokens(socket, model, &desired)?;
     apply_view_state(socket, off, view)?;
     eprintln!(
@@ -683,6 +693,13 @@ fn pass(
 
 /// Installs the tree view or confirms it is off, according to the marker. Tokens are never
 /// touched here: Agent Tree decorations stay published with tree ordering off.
+fn endpoint_rank_prefix(socket: &str) -> R<String> {
+    let machine_id = std::fs::read_to_string("/etc/machine-id").map_err(|_| {
+        "/etc/machine-id is unavailable; endpoint rank identity unavailable".to_string()
+    })?;
+    crate::identity::endpoint_rank_prefix(&machine_id, Path::new(socket))
+}
+
 fn apply_view_state(socket: &str, off: &Path, view: &mut ViewState) -> R<()> {
     if mode::is_off(off) {
         projection::ensure_view_cleared(socket, view)
