@@ -6,16 +6,22 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-28
+
+### Added
+
+- Subagents show their own name after the branch/role marker, capped at 12 terminal display columns. Workers remain branch/role markers only; roots and ordinary agents use Herdr's native workspace/tab cells.
+- Agents viewed through endpoints without a compatible branch-token publisher now retain readable native `workspace · tab` rows instead of icon-only rows. The endpoint doctor identifies endpoints without a live branch-capable publisher, including 0.1.0 publishers and 0.2.0 publishers that still compose their own row. Publisher capability is identified even when an endpoint currently has no active Pi branch rows.
+
 ### Changed
 
 - `agent_tree_rank` now prefixes each six-digit preorder rank with a stable endpoint namespace derived from a domain-separated digest of the validated machine ID and canonical Herdr socket path. Missing/invalid endpoint identity clears only plugin-owned tokens and the source-owned view rather than silently leaving stale numeric ranks active. Mixed-version rollout limits are documented in `docs/agent-tree/endpoint-rank-rollout.md`.
-- The managed Agents row is now `[["state_icon", "$agent_tree_branch", "workspace", "tab"]]`. The plugin publishes the new `agent_tree_branch` token, never writes the old composed `agent_tree_row`, leaves roots and ordinary/non-Pi agents to Herdr's native workspace/tab cells, shows Workers as branch/role markers only, and adds a Subagent's own name capped at 12 terminal display columns.
-- User-owned rows using either previous layout — 0.1.0 `["state_icon", "$agent_tree_row", "terminal_title_stripped"]` or 0.2.0 `["state_icon", "$agent_tree_row"]` — are never rewritten. Deploy and activation print the exact replacement row for manual migration. Upgrade cleanup clears stale `agent_tree_row` together with `agent_tree_branch` and `agent_tree_rank`, preserving every other source's metadata.
+- The managed Agents row is now `[["state_icon", "$agent_tree_branch", "workspace", "tab"]]`. The plugin publishes `agent_tree_branch` and never writes the old composed `agent_tree_row` token. Existing user-owned `[ui.sidebar.agents]` rows are not rewritten; manually replace either old 0.1.0 row (`["state_icon", "$agent_tree_row", "terminal_title_stripped"]`) or 0.2.0 row (`["state_icon", "$agent_tree_row"]`) with `rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]`.
+- Local dogfood deploy safely preflights managed-to-staged ownership before building, staging, changing config, or relinking. When the registered managed checkout still owns the socket's subscriber, deploy fails before mutation and prints the operator steps to disable/unlink, verify the same-UID subscriber identity and matching `HERDR_SOCKET_PATH`, terminate that exact process, and retry. Deploy never signals a process.
 
-### Fixed
+### Validation
 
-- Agents viewed through endpoints without a compatible branch-token publisher now retain readable native `workspace · tab` rows instead of icon-only rows. The endpoint doctor flags endpoints without a live branch-capable publisher, including old 0.1.0 plugins and 0.2.0 plugins still publishing composed-row tokens, and separately reports configs that still need the old-token migration.
-- Local dogfood deploy refuses before building, staging, changing config, or relinking when the registered managed checkout still owns the socket's subscriber. Herdr 0.9.1 `herdr plugin disable agent-tree` and `herdr plugin unlink agent-tree` leave its detached subscriber running; disable the plugin, verify the reported PID is still the same-UID `agent-tree subscriber` with the reported managed executable and matching `HERDR_SOCKET_PATH`, run `kill -TERM <pid>`, wait for it to exit, then retry the printed deploy command. Deploy never signals a process.
+- Approved live dogfood in a desktop-wsl merged TUI validated two endpoint families: the x1nano `herdr-agent-tree` root was immediately followed by its Task Worker, and the desktop `ffsync` root was immediately followed by its Task Worker. The observed endpoint-qualified ranks were `ha99dee8df1923c08-000001/000002` on x1nano and `he4cfca619976c0cb-000001/000002` on desktop. This is live merged-client evidence, distinct from isolated tests. Cartlab was not upgraded; it remains on 0.1.0 and had no current agents, so it was not validated. Mixed-version rollout remains partial; see `docs/agent-tree/endpoint-rank-rollout.md`.
 
 ## [0.2.0] - 2026-09-27
 
@@ -153,6 +159,7 @@ semantic versioning.
   still parses; uninstall is transactional with a full preflight and automatic restore; and
   the deployment lock is removed only when its owner token still matches.
 
-[Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Algorant/herdr-agent-tree/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Algorant/herdr-agent-tree/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Algorant/herdr-agent-tree/releases/tag/v0.1.0

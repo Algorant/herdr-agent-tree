@@ -8,12 +8,13 @@ including across tabs and workspaces.
 It is an external Herdr plugin. It never changes Pi, never writes Pi-owned metadata, and
 never touches panes it cannot validate.
 
-Status: v0.2.0 is the latest source release; the current unreleased source keeps the
-package version unchanged until separate release preparation. It targets Linux and Herdr 0.9.0+.
+Status: v0.3.0 is the latest source release. It targets Linux and Herdr 0.9.0+.
 The Herdr-managed GitHub install was dogfooded on Herdr 0.9.1 with a real Pi
 root, Worker and Subagents, including managed reinstall, tree/native toggle and cleanup.
-The isolated `tests/e2e/sidebar.sh` and `tests/e2e/toggle.sh` exercise rendering and the
-shortcut (see "End-to-end test").
+Live merged-client validation covered two endpoint families; cartlab remains on 0.1.0 and was
+not upgraded. See `docs/agent-tree/endpoint-rank-rollout.md` for the exact evidence and rollout
+limitation. The isolated `tests/e2e/sidebar.sh` and `tests/e2e/toggle.sh` exercise rendering and
+the shortcut (see "End-to-end test").
 
 ## How it works
 
@@ -142,7 +143,7 @@ The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` sect
 ### Herdr-managed source install (the normal user path)
 
 The supported install path for a normal user is Herdr's own plugin lifecycle. Install the
-published v0.2.0 source release from GitHub:
+v0.3.0 source release from GitHub:
 
 Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 (`cargo build --locked --release`) in the managed checkout, and registers the plugin.
@@ -150,7 +151,7 @@ Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 and startup hooks do not run on install or enable in an already-running server.
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.2.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.3.0
 herdr plugin enable agent-tree
 # From this repository checkout (or the managed source checkout):
 scripts/activate-managed.sh
@@ -194,7 +195,7 @@ start**, not on install or enable, which is why the explicit `apply` is part of 
 Reinstall from the new tag; Herdr replaces the managed source checkout and reruns the build:
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.2.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.3.0
 ```
 
 There is no separate `herdr plugin update` in plugin v1, no `latest`, and no side-by-side

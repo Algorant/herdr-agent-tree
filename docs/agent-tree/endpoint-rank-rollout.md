@@ -23,6 +23,18 @@ longer owned. Deploy this update to every endpoint participating in a merged Age
 During a mixed rollout, old numeric ranks sort lexically before the new `h...` ranks, and
 old endpoints may continue colliding/interleaving with each other until each is upgraded.
 The updated endpoint's own family remains ordered together under its common prefix, but this
-is not a claim that a mixed-version merged panel is globally grouped. Cross-endpoint live
-correctness still requires approved multi-endpoint validation; isolated single-endpoint tests
-cannot establish merged-client behavior.
+is not a claim that a mixed-version merged panel is globally grouped.
+
+## Live merged-client validation (2026-09-28)
+
+Approved live dogfood in a desktop-wsl combined client validated two endpoint families: the
+x1nano `herdr-agent-tree` root was immediately followed by its Task Worker, then the desktop
+`ffsync` root was immediately followed by its Task Worker. The observed endpoint-qualified
+ranks were `ha99dee8df1923c08-000001/000002` on x1nano and
+`he4cfca619976c0cb-000001/000002` on desktop. This is live merged-client evidence, distinct
+from isolated single-endpoint tests.
+
+This validation covers those two endpoint families only; it does not establish global grouping
+for a mixed-version panel. Cartlab was not upgraded, remains on the old 0.1.0 plugin, and had
+no current agents, so it was not validated. Cross-endpoint correctness beyond the two observed
+families still requires validation after the remaining rollout.
