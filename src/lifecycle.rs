@@ -786,7 +786,7 @@ pub fn toggle_enables(owner: ViewOwner) -> R<bool> {
 /// A view owned by another source, or an owner that cannot be determined, fails closed and
 /// changes nothing: Herdr exposes no view stack that could restore a displaced foreign view.
 /// Turning tree off clears only this plugin's view. The subscriber keeps publishing
-/// `agent_tree_row`/`agent_tree_rank` in both states, and the plugin never writes
+/// `agent_tree_branch`/`agent_tree_rank` in both states, and the plugin never writes
 /// `ui.agent_panel_sort`.
 pub fn toggle() -> R<()> {
     let dir = state_dir()?;

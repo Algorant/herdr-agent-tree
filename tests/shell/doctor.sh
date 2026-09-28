@@ -63,7 +63,7 @@ cat >"$LOCAL_CONFIG/config.toml" <<'TOML'
 sidebar_width = 32
 
 [ui.sidebar.agents]
-rows = [["state_icon", "$agent_tree_row"]]
+rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]
 
 [[keys.command]]
 key = "prefix+t"
@@ -94,7 +94,7 @@ agents = [
      "agent_session": {"agent": "pi", "kind": "path", "source": "herdr:pi", "value": worker_session},
      "tokens": {"role": "worker", "agency_self": self_hash(worker_session),
                 "agency_parent": self_hash(root_session), "task_id": "task-1",
-                "agent_tree_rank": "000001", "agent_tree_row": "\u2514\u2500W task-1"}},
+                "agent_tree_rank": "000001", "agent_tree_branch": "\u2514\u2500W"}},
     {"pane_id": "w1:p3", "agent": "pi", "agent_status": "idle",
      "agent_session": {"agent": "pi", "kind": "path", "source": "herdr:pi", "value": "/home/example/.pi/sessions/role-only.jsonl"},
      "tokens": {"role": "worker", "task_id": "task-2"}},
@@ -109,7 +109,7 @@ python3 - "$LOCAL_STAGE" "$LOCAL_SHA" >"$FAKE/local/plugins.json" <<'PY'
 import json, sys
 root, sha = sys.argv[1], sys.argv[2]
 plugin = {
-    "plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.1.0",
+    "plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.2.0",
     "manifest_path": root + "/herdr-plugin.toml", "plugin_root": root,
     "enabled": True, "platforms": ["linux"], "source": {"kind": "local"},
     "actions": [{"id": action, "title": action, "command": ["./src/agent-tree", action]}
@@ -248,6 +248,18 @@ for _ in $(seq 1 100); do
 done
 [ -f "$LOCAL_PLUGIN_STATE/subscriber-$TAG.lock" ] || { cat "$SB/subscriber.log" >&2; fail "the subscriber did not acquire its lock"; }
 
+start_local_subscriber() {
+    env HERDR_PLUGIN_ID=agent-tree HERDR_SOCKET_PATH="$LOCAL_SOCKET" \
+        HERDR_PLUGIN_STATE_DIR="$LOCAL_PLUGIN_STATE" HERDR_PLUGIN_ROOT="$LOCAL_STAGE" \
+        "$LOCAL_STAGE/src/agent-tree" subscriber >"$SB/subscriber-restarted.log" 2>&1 &
+    SUB_PID=$!
+    for _ in $(seq 1 100); do
+        [ -f "$LOCAL_PLUGIN_STATE/subscriber-$TAG.lock" ] && kill -0 "$SUB_PID" 2>/dev/null && break
+        sleep 0.1
+    done
+    [ -f "$LOCAL_PLUGIN_STATE/subscriber-$TAG.lock" ] || fail 'the restarted subscriber did not acquire its lock'
+}
+
 run_doctor() {
     env HOME="$SB/home" \
         XDG_CONFIG_HOME="$LOCAL/config" \
@@ -279,7 +291,10 @@ assert endpoint["verdict"] == "healthy", endpoint
 assert endpoint["subscriber"]["count"] == 1, endpoint["subscriber"]
 assert endpoint["subscriber"]["matches_registered"] is True, endpoint["subscriber"]
 assert endpoint["executable"]["path"].endswith("/stage/src/agent-tree"), endpoint["executable"]
-assert endpoint["sidebar"]["agent_tree_row_present"] is True, endpoint["sidebar"]
+assert endpoint["sidebar"]["agent_tree_branch_present"] is True, endpoint["sidebar"]
+assert endpoint["plugin"]["publishes_agent_tree_branch"] is True, endpoint["plugin"]
+assert endpoint["sidebar"]["branch_rows"] == 1, endpoint["sidebar"]
+assert endpoint["sidebar"]["fallback_active"] is False, endpoint["sidebar"]
 assert endpoint["shortcut"]["present"] is True, endpoint["shortcut"]
 panes = endpoint["panes"]
 assert panes["relationship_bearing"] == 1, panes
@@ -290,6 +305,78 @@ assert panes["ordinary_pi"] == 1, panes
 assert doc["split_state"] is False
 PY
 pass 'local staged endpoint reports healthy and separates role-declared from ordinary panes'
+
+# A zero-agent 0.2.0 endpoint cannot prove that it runs the unreleased branch publisher.
+cp -- "$FAKE/local/agents.json" "$SB/agents.current.json"
+echo '{"result":{"agents":[]}}' >"$FAKE/local/agents.json"
+run_doctor --endpoint local --json >"$SB/zero-agents.json"
+python3 - "$SB/zero-agents.json" <<'PY' || fail '0.2.0 with no observed branch rows was incorrectly trusted'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["plugin"]["version"] == "0.2.0", endpoint["plugin"]
+assert endpoint["plugin"]["publishes_agent_tree_branch"] is False, endpoint["plugin"]
+assert endpoint["sidebar"]["fallback_active"] is True, endpoint["sidebar"]
+assert any("capability is unproven" in note for note in endpoint["notes"]), endpoint["notes"]
+assert any("rows fall back to native workspace" in note for note in endpoint["notes"]), endpoint["notes"]
+PY
+cp -- "$SB/agents.current.json" "$FAKE/local/agents.json"
+
+# An older version remains unproven even if it has no current rows.
+cp -- "$FAKE/local/plugins.json" "$SB/plugins.current.json"
+python3 - "$FAKE/local/plugins.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+doc = json.load(open(path))
+doc["result"]["plugins"][0]["version"] = "0.1.0"
+json.dump(doc, open(path, "w"))
+PY
+: >"$FAKE/local/agents.json"
+echo '{"result":{"agents":[]}}' >"$FAKE/local/agents.json"
+run_doctor --endpoint local --json >"$SB/old-plugin.json"
+python3 - "$SB/old-plugin.json" <<'PY' || fail '0.1.0 did not report native fallback'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["sidebar"]["fallback_active"] is True, endpoint["sidebar"]
+assert endpoint["plugin"]["publishes_agent_tree_branch"] is False, endpoint["plugin"]
+assert any("capability is unproven" in note for note in endpoint["notes"]), endpoint["notes"]
+PY
+cp -- "$SB/plugins.current.json" "$FAKE/local/plugins.json"
+cp -- "$SB/agents.current.json" "$FAKE/local/agents.json"
+
+# 0.2.0 legacy composed tokens are negative evidence, even with a matching live subscriber.
+python3 - "$FAKE/local/agents.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+doc = json.load(open(path))
+for agent in doc["result"]["agents"]:
+    tokens = agent.get("tokens") or {}
+    if "agent_tree_branch" in tokens:
+        tokens["agent_tree_row"] = "old composed location"
+        tokens.pop("agent_tree_branch")
+json.dump(doc, open(path, "w"))
+PY
+run_doctor --endpoint local --json >"$SB/legacy-plugin.json"
+python3 - "$SB/legacy-plugin.json" <<'PY' || fail 'legacy 0.2.0 composed tokens did not identify an old publisher'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["plugin"]["publishes_agent_tree_branch"] is False, endpoint["plugin"]
+assert endpoint["sidebar"]["legacy_rows"] > 0, endpoint["sidebar"]
+assert endpoint["sidebar"]["fallback_active"] is True, endpoint["sidebar"]
+PY
+cp -- "$SB/agents.current.json" "$FAKE/local/agents.json"
+kill "$SUB_PID"
+wait "$SUB_PID" 2>/dev/null || true
+SUB_PID=
+run_doctor --endpoint local --json >"$SB/stopped.json"
+python3 - "$SB/stopped.json" <<'PY' || fail 'stopped subscriber did not report native fallback'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["subscriber"]["count"] == 0, endpoint["subscriber"]
+assert endpoint["sidebar"]["fallback_active"] is True, endpoint["sidebar"]
+assert any("rows fall back to native workspace" in note for note in endpoint["notes"]), endpoint["notes"]
+PY
+start_local_subscriber
+pass 'old plugin versions and stopped subscribers report native workspace/tab fallback'
 
 # A GitHub-managed source install runs the built target binary through a tracked launcher.
 # Its launcher bytes must not be mistaken for the running executable bytes.
@@ -305,7 +392,7 @@ python3 - "$MANAGED" >"$FAKE/local/plugins.json" <<'PY'
 import json, sys
 root = sys.argv[1]
 plugin = {
-    "plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.1.0",
+    "plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.2.0",
     "manifest_path": root + "/herdr-plugin.toml", "plugin_root": root,
     "enabled": True, "platforms": ["linux"],
     "source": {"kind": "github", "resolved_commit": "fixture-commit"},
@@ -381,7 +468,7 @@ SUB_PID=
 python3 - "$LOCAL_STAGE" "$LOCAL_SHA" >"$FAKE/local/plugins.json" <<'PY'
 import json, sys
 root = sys.argv[1]
-plugin = {"plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.1.0",
+plugin = {"plugin_id": "agent-tree", "name": "Agent Tree", "version": "0.2.0",
           "manifest_path": root + "/herdr-plugin.toml", "plugin_root": root,
           "enabled": True, "platforms": ["linux"], "source": {"kind": "local"},
           "actions": [{"id": action, "title": action, "command": ["./src/agent-tree", action]}
@@ -399,7 +486,7 @@ for _ in $(seq 1 100); do
 done
 
 # ---------------------------------------------------------------------------
-# 2. Remote endpoint: shortcut + $agent_tree_row present, no plugin -> degraded split state.
+# 2. Remote endpoint: native fallback row, no plugin -> degraded split state.
 # ---------------------------------------------------------------------------
 printf '== remote endpoint\n'
 run_doctor --endpoint archbox --json >"$SB/remote.json" || { cat "$SB/remote.json" >&2; fail 'doctor failed for archbox'; }
@@ -410,7 +497,9 @@ assert endpoint["kind"] == "remote" and endpoint["label"] == "cart-lab" and endp
 assert endpoint["verdict"] == "degraded", endpoint
 assert endpoint["plugin"]["registered"] is False, endpoint["plugin"]
 assert endpoint["shortcut"]["present"] is True, endpoint["shortcut"]
-assert endpoint["sidebar"]["agent_tree_row_present"] is True, endpoint["sidebar"]
+assert endpoint["sidebar"]["agent_tree_branch_present"] is True, endpoint["sidebar"]
+assert endpoint["sidebar"]["fallback_active"] is True, endpoint["sidebar"]
+assert any("rows fall back to native workspace" in note for note in endpoint["notes"]), endpoint["notes"]
 assert any("not registered" in issue for issue in endpoint["issues"]), endpoint["issues"]
 assert endpoint["panes"]["delegated_missing_relationship"] == 0, endpoint["panes"]
 assert endpoint["panes"]["ordinary_pi"] == 1, endpoint["panes"]
@@ -490,11 +579,27 @@ python3 - "$SB/foreign.json" <<'PY' || fail 'foreign block was not classified as
 import json, sys
 endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
 assert endpoint["sidebar"]["foreign_without_token"] is True, endpoint["sidebar"]
-assert endpoint["sidebar"]["agent_tree_row_present"] is False, endpoint["sidebar"]
+assert endpoint["sidebar"]["agent_tree_branch_present"] is False, endpoint["sidebar"]
+assert endpoint["sidebar"]["fallback_active"] is True, endpoint["sidebar"]
 PY
 [ "$FOREIGN_SHA" = "$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')" ] \
     || fail 'the doctor modified the endpoint config'
-pass 'a foreign sidebar block without the token is reported and left untouched'
+pass 'a foreign sidebar block without the branch token is reported and left untouched'
+
+printf '== legacy sidebar migration\n'
+cat >"$REMOTE_CONFIG/config.toml" <<'TOML'
+[ui.sidebar.agents]
+rows = [["state_icon", "$agent_tree_row"]]
+TOML
+run_doctor --endpoint archbox --json >"$SB/legacy-sidebar.json"
+python3 - "$SB/legacy-sidebar.json" <<'PY' || fail 'legacy sidebar token did not trigger migration-needed'
+import json, sys
+endpoint = json.load(open(sys.argv[1]))["endpoints"][0]
+assert endpoint["sidebar"]["migration_needed"] is True, endpoint["sidebar"]
+assert endpoint["sidebar"]["legacy_agent_tree_row_present"] is True, endpoint["sidebar"]
+assert any("migration needed" in note and "$agent_tree_branch" in note for note in endpoint["notes"]), endpoint["notes"]
+PY
+pass 'a user-owned legacy token is reported as migration-needed without rewriting it'
 
 # ---------------------------------------------------------------------------
 # 5. The doctor never writes to either endpoint config.

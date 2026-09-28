@@ -5,7 +5,7 @@ set -euo pipefail
 
 HERDR=${HERDR_BIN_PATH:-herdr}
 CONFIG=${XDG_CONFIG_HOME:-$HOME/.config}/herdr/config.toml
-ROW='rows = [["state_icon", "$agent_tree_row"]]'
+ROW='rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]'
 
 fail() { printf 'agent-tree: %s\n' "$*" >&2; exit 1; }
 command -v "$HERDR" >/dev/null || fail "herdr not found"
@@ -36,9 +36,11 @@ try:
 except tomllib.TOMLDecodeError as exc:
     sys.exit(f"agent-tree: invalid Herdr config: {exc}")
 sidebar = config.get("ui", {}).get("sidebar", {}).get("agents")
-expected = [["state_icon", "$agent_tree_row"]]
+expected = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]
 if sidebar is not None and sidebar.get("rows") != expected:
-    sys.exit("agent-tree: existing [ui.sidebar.agents] rows differ; manually migrate to [['state_icon', '$agent_tree_row']] after review")
+    if "$agent_tree_row" in text:
+        sys.exit("agent-tree: existing [ui.sidebar.agents] rows still reference $agent_tree_row; manually replace with rows = [['state_icon', '$agent_tree_branch', 'workspace', 'tab']] and reload Herdr config")
+    sys.exit("agent-tree: existing [ui.sidebar.agents] rows differ; review and manually migrate to rows = [['state_icon', '$agent_tree_branch', 'workspace', 'tab']]")
 if sidebar is None:
     text += "\n[ui.sidebar.agents]\n" + str(row) + "\n"
 destination.write_text(text)

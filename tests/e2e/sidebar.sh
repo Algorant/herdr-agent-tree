@@ -5,9 +5,10 @@
 # It builds the plugin, starts an isolated Herdr instance (own HOME, all XDG dirs and an
 # explicit socket, verified at runtime), installs the Pi publisher and launches 7
 # credential-free idle Pi agents to obtain genuine agent_session values. It publishes the
-# pi-agency-shaped relationship tokens derived from those real session paths (never
-# agent_tree_* tokens), applies the projection, asserts rank ordering, rejects a forged
-# agency_self, and asserts the rendered sidebar through a real tmux PTY.
+# pi-agency-shaped relationship tokens derived from those real session paths, never
+# agent_tree_branch or agent_tree_rank tokens, injects one stale 0.2.0 agent_tree_row to
+# verify migration/native fallback, applies the projection, asserts rank ordering, rejects a
+# forged agency_self, and captures the rendered sidebar through a real tmux PTY.
 #
 # Everything it creates lives in one temp directory and is removed on exit, including on
 # failure or interrupt; the isolated server is stopped with it. It never reads or writes the
@@ -120,9 +121,9 @@ sidebar_width = 32
 sidebar_min_width = 32
 sidebar_max_width = 32
 
-# One line per agent: status plus the plugin-composed location/tree/identity value.
+# One line per agent: plugin branch/name followed by native location cells.
 [ui.sidebar.agents]
-rows = [["state_icon", "$agent_tree_row"]]
+rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]
 CFG
 CONFIG="$XDG_CONFIG_HOME/herdr/config.toml"
 
@@ -268,18 +269,31 @@ herdr pane report-metadata "$P_X1" --source release-owner-fixture --token "keep=
 step "codex-1 (reported non-Pi agent, ${SECONDS-t0}s)"
 
 make_pi root-alpha;   P_R1=$GP_PANE; S_R1=$GP_SESSION; step "root-alpha   (${SECONDS-t0}s)"
+ROOT_WS=$(herdr agent list | jq -r --arg p "$P_R1" '.result.agents[] | select(.pane_id==$p) | .workspace_id')
+ROOT_TAB=$(herdr agent list | jq -r --arg p "$P_R1" '.result.agents[] | select(.pane_id==$p) | .tab_id')
+herdr tab rename "$ROOT_TAB" main >/dev/null
 make_pi worker-alpha; P_W1=$GP_PANE; S_W1=$GP_SESSION; step "worker-alpha (${SECONDS-t0}s)"
 H_R1=$(self_hash "$S_R1"); H_W1=$(self_hash "$S_W1")
 report_rel "$P_W1" worker "$H_W1" "$H_R1" "task_id=task-e2e" "handoff=reported"
+WORKER_WS=$(herdr agent list | jq -r --arg p "$P_W1" '.result.agents[] | select(.pane_id==$p) | .workspace_id')
+herdr workspace rename "$WORKER_WS" "task-5 · herdr-agent-tree" >/dev/null
 
 make_pi sub-alpha; P_S1=$GP_PANE; S_S1=$GP_SESSION; step "sub-alpha    (${SECONDS-t0}s)"
+herdr agent rename "$P_S1" live-sidebar-verify >/dev/null
+herdr pane move "$P_S1" --tab "$ROOT_TAB" --target-pane "$P_R1" --split down --no-focus >/dev/null
+P_S1=$(herdr agent list | jq -r --arg session "$S_S1" '.result.agents[] | select(.agent_session.value==$session) | .pane_id')
+[ -n "$P_S1" ] || fail "could not resolve moved Subagent pane from its session path"
 H_S1=$(self_hash "$S_S1")
-report_rel "$P_S1" subagent "$H_S1" "$H_W1" "question=1"
+report_rel "$P_S1" subagent "$H_S1" "$H_R1" "question=1"
 
 make_pi root-beta; P_R2=$GP_PANE; S_R2=$GP_SESSION; step "root-beta    (${SECONDS-t0}s)"
 make_pi sub-beta;  P_S2=$GP_PANE; S_S2=$GP_SESSION; step "sub-beta     (${SECONDS-t0}s)"
-H_R2=$(self_hash "$S_R2"); H_S2=$(self_hash "$S_S2")
-report_rel "$P_S2" subagent "$H_S2" "$H_R2"
+herdr agent rename "$P_S2" scout-release-notes >/dev/null
+herdr pane move "$P_S2" --tab "$ROOT_TAB" --target-pane "$P_R1" --split down --no-focus >/dev/null
+P_S2=$(herdr agent list | jq -r --arg session "$S_S2" '.result.agents[] | select(.agent_session.value==$session) | .pane_id')
+[ -n "$P_S2" ] || fail "could not resolve moved Subagent pane from its session path"
+H_S2=$(self_hash "$S_S2")
+report_rel "$P_S2" subagent "$H_S2" "$H_R1" "question=1"
 
 # ---------------------------------------------------------------------------
 # 5. Apply the plugin and verify the tree came from real identity validation.
@@ -291,8 +305,8 @@ rank_of() { # <pane> -> rank or "-"
     herdr agent list | jq -r --arg p "$1" '[.result.agents[] | select(.pane_id==$p) | .tokens.agent_tree_rank // "-"][0] // "-"'
 }
 
-row_of() { # <pane> -> composed display token or "-"
-    herdr agent list | jq -r --arg p "$1" '.result.agents[] | select(.pane_id==$p) | .tokens.agent_tree_row // "-"'
+row_of() { # <pane> -> plugin branch token or "-"
+    herdr agent list | jq -r --arg p "$1" '.result.agents[] | select(.pane_id==$p) | .tokens.agent_tree_branch // "-"'
 }
 
 pane_tokens() { # <pane> -> tokens from the retained pane record, even if agent-list entry vanished
@@ -306,7 +320,7 @@ wait_row_contains() { # <pane> <substring>
         [[ "$got" == *"$wanted"* ]] && return 0
         sleep 0.25
     done
-    fail "pane $pane composed row did not contain '$wanted' (got '$got')"
+    fail "pane $pane branch token did not contain '$wanted' (got '$got')"
 }
 
 watch_event() { # <dotted event> <data field> <value> -> starts watcher and waits for subscription
@@ -365,7 +379,21 @@ wait_ranked() { # <count> -> 0 if reached within ~20s
     return 1
 }
 
-wait_ranked 5 || fail "expected 5 ranked rows; the plugin did not finish the projection"
+wait_ranked 4 || fail "expected root, Worker and two direct Subagents to be ranked"
+
+log "Verifying upgrade clears a stale 0.2.0 composed-row token"
+herdr pane report-metadata "$P_L1" --source agent-tree \
+    --token 'agent_tree_row=herdr-agent-tree · 1' >/dev/null
+stale_cleared=0
+for _ in $(seq 1 40); do
+    tokens=$(pane_tokens "$P_L1")
+    if ! printf '%s' "$tokens" | jq -e 'has("agent_tree_row")' >/dev/null; then stale_cleared=1; break; fi
+    sleep 0.25
+done
+[ "$stale_cleared" = 1 ] || fail "the 0.2.0 agent_tree_row survived migration: $tokens"
+printf '%s' "$tokens" | jq -e 'has("agent_tree_branch") or has("agent_tree_rank")' >/dev/null \
+    && fail "the ordinary stale-token fixture gained current plugin tokens: $tokens"
+step "stale 0.2.0 row cleared; other metadata preserved: $tokens"
 
 log "Verifying real identity validation"
 expect_rank() { # <pane> <expected> <label>
@@ -374,39 +402,31 @@ expect_rank() { # <pane> <expected> <label>
     step "$3 rank $2"
 }
 expect_rank "$P_R1" 000001 "root-alpha"
-expect_rank "$P_W1" 000002 "worker-alpha"
-expect_rank "$P_S1" 000003 "sub-alpha (Worker-owned Subagent)"
-expect_rank "$P_R2" 000004 "root-beta"
-expect_rank "$P_S2" 000005 "sub-beta"
-for pair in "$P_L1=lone-1" "$P_L2=lone-2" "$P_X1=codex-1"; do
+for pane in "$P_W1" "$P_S1" "$P_S2"; do
+    [ "$(rank_of "$pane")" != "-" ] || fail "validated direct child $pane was not ranked"
+done
+[ "$(rank_of "$P_R2")" = "-" ] || fail "root-beta without children must remain unranked"
+child_ranks=$(printf '%s\n' "$(rank_of "$P_W1")" "$(rank_of "$P_S1")" "$(rank_of "$P_S2")" | sort | paste -sd, -)
+[ "$child_ranks" = "000002,000003,000004" ] || fail "direct-child ranks are not a complete preorder tail: $child_ranks"
+for pair in "$P_L1=lone-1" "$P_L2=lone-2" "$P_X1=codex-1" "$P_R2=root-beta"; do
     local_pane=${pair%%=*}; local_name=${pair##*=}
     [ "$(rank_of "$local_pane")" = "-" ] || fail "$local_name must stay unranked"
     row=$(row_of "$local_pane")
-    [ -n "$row" ] && [ "$row" != "-" ] || fail "$local_name has no composed display row"
-    [[ "$row" == *"$local_name"* ]] || [[ "$row" == *"$local_name ·"* ]] || fail "$local_name display is not readable: $row"
+    [ "$row" = "-" ] || fail "$local_name must remain unmarked: $row"
 done
-step "Unlinked Pi and non-Pi rows have readable display tokens and remain unranked"
+[ "$(row_of "$P_R1")" = "-" ] || fail "root received a branch marker: $(row_of "$P_R1")"
+step "Roots, tokenless Pi and non-Pi rows keep native workspace/tab identity and remain unmarked"
 
-log "Verifying live display refresh from name and label events"
-watch_event pane.updated pane_id "$P_W1"
-herdr agent rename "$P_W1" worker-task-3-78712afb >/dev/null
-finish_event_watch
-wait_row_contains "$P_W1" "worker-task-3"
+log "Verifying live display refresh from Subagent name events"
 watch_event pane.updated pane_id "$P_S1"
-herdr agent rename "$P_S1" worker-owned-lint-helper >/dev/null
+herdr agent rename "$P_S1" verify-agent >/dev/null
 finish_event_watch
-wait_row_contains "$P_S1" "worker-own"
-ROOT_WS=$(herdr agent list | jq -r --arg p "$P_R1" '.result.agents[] | select(.pane_id==$p) | .workspace_id')
-ROOT_TAB=$(herdr agent list | jq -r --arg p "$P_R1" '.result.agents[] | select(.pane_id==$p) | .tab_id')
-watch_event workspace.renamed workspace_id "$ROOT_WS"
-herdr workspace rename "$ROOT_WS" root-workspace-renamed >/dev/null
+wait_row_contains "$P_S1" "verify-agent"
+watch_event pane.updated pane_id "$P_S1"
+herdr agent rename "$P_S1" live-sidebar-verify >/dev/null
 finish_event_watch
-wait_row_contains "$P_R1" "root-workspace-renamed"
-watch_event tab.renamed tab_id "$ROOT_TAB"
-herdr tab rename "$ROOT_TAB" root-tab-renamed >/dev/null
-finish_event_watch
-wait_row_contains "$P_R1" "root-workspace-renamed · root-tab-renamed"
-step "Name, workspace rename, and tab rename events refreshed composed tokens"
+wait_row_contains "$P_S1" "live-sideba"
+step "Subagent short names refresh the branch token"
 
 # Tamper proof: forge a ranked leaf Subagent's agency_self and watch the plugin recompute
 # and drop it, then restore the true value and watch the rank return.
@@ -420,12 +440,11 @@ for _ in $(seq 1 30); do
 done
 [ "$dropped" = 1 ] || fail "a forged agency_self was not rejected"
 invalid_sub_row=$(row_of "$P_S1")
-[[ "$invalid_sub_row" != *"└─S"* ]] || fail "invalid relationship retained a fabricated child branch: $invalid_sub_row"
-[[ "$invalid_sub_row" == *"sub-alpha"* ]] || fail "invalid relationship lost the ordinary location display: $invalid_sub_row"
-step "Forged agency_self dropped the Subagent rank and returned it to its ordinary location row"
-report_rel "$P_S1" subagent "$H_S1" "$H_W1" "question=1"
-wait_ranked 5 || fail "restoring the true agency_self did not restore the tree"
-[ "$(rank_of "$P_S1")" = "000003" ] || fail "Subagent rank did not return after restore"
+[ "$invalid_sub_row" = "-" ] || fail "invalid relationship retained a fabricated branch: $invalid_sub_row"
+step "Forged agency_self dropped the Subagent rank and branch, leaving native location cells"
+report_rel "$P_S1" subagent "$H_S1" "$H_R1" "question=1"
+wait_ranked 4 || fail "restoring the true agency_self did not restore the tree"
+[ "$(rank_of "$P_S1")" != "-" ] || fail "Subagent rank did not return after restore"
 step "True agency_self restored the Subagent rank"
 
 # ---------------------------------------------------------------------------
@@ -482,17 +501,60 @@ PY
         [ "$measured" = "$expected" ] || fail "$label: expected ${expected}-column sidebar at the rendered pane seam, measured $measured"
     fi
     printf '%s\n' "$region" | grep -qE 'agents +tree' || fail "$label: sidebar header missing: $region"
-    printf '%s\n' "$region" | grep -q '└─W worker-task-3' || fail "$label: Worker branch or identifying name prefix clipped: $region"
-    printf '%s\n' "$region" | grep -q '│  └─S worker-own' || fail "$label: nested Subagent branch/role/name missing: $region"
-    printf '%s\n' "$region" | grep -q 'lone-1' || fail "$label: lone Pi display row is not readable"
-    printf '%s\n' "$region" | grep -q 'lone-2' || fail "$label: second lone Pi display row is not readable"
-    printf '%s\n' "$region" | grep -q 'codex' || fail "$label: non-Pi display row is not readable"
-    if printf '%s\n' "$region" | grep -q 'π -'; then fail "$label: repeated native Pi title remains in composed sidebar row"; fi
+    printf '%s\n' "$region" | grep -q '└─W' || fail "$label: Worker marker missing: $region"
+    printf '%s\n' "$region" | grep -q 'task-5' || fail "$label: Worker task workspace identity missing: $region"
+    [ "$(printf '%s\n' "$region" | grep -c '├─S')" = 2 ] \
+        || fail "$label: expected two direct Subagent sibling markers: $region"
+    printf '%s\n' "$region" | grep -q 'lone-1' || fail "$label: lone Pi workspace fallback is not readable"
+    printf '%s\n' "$region" | grep -q 'lone-2' || fail "$label: tokenless Pi workspace fallback is not readable"
+    printf '%s\n' "$region" | grep -q 'codex-1' || fail "$label: non-Pi workspace fallback is not readable"
+    if printf '%s\n' "$region" | grep -q 'π -'; then fail "$label: Pi terminal title leaked into the native fallback row"; fi
     step "$label: measured ${measured}-column sidebar seam; exact rows captured below"
-    printf '%s\n' "$region" | grep -E 'agents +tree|worker-task-3|worker-own|lone-1 ·|lone-2 ·|codex ·' | while IFS= read -r line; do
+    printf '%s\n' "$region" | grep -E 'agents +tree|^[[:space:]]*○' | while IFS= read -r line; do
         printf '     |%s\n' "$line"
     done
 }
+
+log "Verifying old composed token is ignored by the native branch/workspace/tab renderer"
+PLUGIN_STATE="$XDG_STATE_HOME/herdr/plugins/agent-tree"
+TAG=$(printf '%s' "$HERDR_SOCKET_PATH" | sha256sum | cut -c1-16)
+LOCK="$PLUGIN_STATE/subscriber-$TAG.lock"
+[ -f "$LOCK" ] || fail "subscriber lock missing before legacy-token render: $LOCK"
+SUB_PID=$(jq -r '.pid' "$LOCK")
+kill -TERM "$SUB_PID" 2>/dev/null || fail "could not stop isolated subscriber $SUB_PID for the renderer check"
+for _ in $(seq 1 50); do
+    [ ! -e "$LOCK" ] && break
+    sleep 0.1
+done
+[ ! -e "$LOCK" ] || fail "isolated subscriber did not cleanly stop: $LOCK"
+herdr pane report-metadata "$P_L1" --source agent-tree \
+    --token 'agent_tree_row=obsolete-composed-location' >/dev/null
+legacy_tokens=$(pane_tokens "$P_L1")
+printf '%s' "$legacy_tokens" | jq -e 'keys == ["agent_tree_row"]' >/dev/null \
+    || fail "legacy fixture pane does not carry only agent_tree_row: $legacy_tokens"
+set_width 26
+LEGACY_TMUX="$TMP/legacy-render.sock"
+tmux -S "$LEGACY_TMUX" new-session -d -x 150 -y 50 -s legacy-render "$HERDR_BIN"
+sleep 5
+tmux -S "$LEGACY_TMUX" send-keys -t legacy-render Escape; sleep 0.5
+tmux -S "$LEGACY_TMUX" send-keys -t legacy-render Escape; sleep 0.5
+tmux -S "$LEGACY_TMUX" capture-pane -p -t legacy-render > "$TMP/legacy-render.txt"
+tmux -S "$LEGACY_TMUX" kill-server >/dev/null 2>&1 || true
+python3 - "$TMP/legacy-render.txt" <<'PY'
+import pathlib, re, sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+header = next((i for i, line in enumerate(lines) if re.search(r"agents +grouped", line)), None)
+if header is None:
+    raise SystemExit("no grouped Agents header in legacy-token PTY capture")
+line = next((line for line in lines[header + 1:] if "lone-1" in line), None)
+if line is None or "lone-1" not in line or "obsolete-composed-location" in line:
+    raise SystemExit(f"legacy row did not fall back to the native workspace/tab cells: {line!r}")
+print("legacy-only pane: " + line[:line.find("│") + 1])
+PY
+herdr plugin action invoke agent-tree.apply >/dev/null
+wait_ranked 4 || fail "re-applying after the renderer check did not restore the ranked tree"
+[ "$(row_of "$P_L1")" = "-" ] || fail "plugin did not clear legacy row after renderer check: $(row_of "$P_L1")"
+TMUX_SOCKET="$TMP/tmux.sock"
 for width in 26 32 36; do
     set_width "$width"
     render_and_assert "pinned-$width" "$width"
@@ -510,8 +572,7 @@ PY
 herdr server reload-config >/dev/null
 render_and_assert "local-default-width-settings" auto
 
-log "Verifying agent release cannot leave a stale plugin row"
-old_codex_row=$(row_of "$P_X1")
+log "Verifying agent release cannot leave stale plugin tokens"
 python3 - "$HERDR_SOCKET_PATH" "$P_X1" <<'PY'
 import json, socket, sys
 s = socket.socket(socket.AF_UNIX)
@@ -526,17 +587,16 @@ if "error" in result:
     raise SystemExit("pane.release_agent failed: " + repr(result["error"]))
 PY
 for _ in $(seq 1 40); do
-    new_codex_row=$(row_of "$P_X1")
     tokens=$(pane_tokens "$P_X1")
-    if ! printf '%s' "$tokens" | jq -e 'has("agent_tree_row") or has("agent_tree_rank")' >/dev/null; then break; fi
+    if ! printf '%s' "$tokens" | jq -e 'has("agent_tree_branch") or has("agent_tree_row") or has("agent_tree_rank")' >/dev/null; then break; fi
     sleep 0.25
 done
-[ "$new_codex_row" != "$old_codex_row" ] || fail "released codex agent retained stale visible row '$old_codex_row'"
-[ "$(rank_of "$P_X1")" = "-" ] || fail "released codex pane unexpectedly gained a rank: $(rank_of "$P_X1")"
-if printf '%s' "$tokens" | jq -e 'has("agent_tree_row") or has("agent_tree_rank")' >/dev/null; then
+[ "$(herdr agent list | jq --arg p "$P_X1" '[.result.agents[] | select(.pane_id==$p)] | length')" = 0 ] \
+    || fail "released codex pane remained in the agent list"
+if printf '%s' "$tokens" | jq -e 'has("agent_tree_branch") or has("agent_tree_row") or has("agent_tree_rank")' >/dev/null; then
     fail "released codex pane retained stale plugin-owned tokens: $tokens"
 fi
 printf '%s' "$tokens" | jq -e '.keep == "kept"' >/dev/null || fail "orphan cleanup removed another source's pane token: $tokens"
-step "pane.get confirms released pane has no plugin-owned row/rank tokens and preserves other-source tokens: $tokens"
+step "pane.get confirms released pane has no branch/legacy-row/rank tokens and preserves other-source tokens: $tokens"
 
 log "End-to-end sidebar test passed"

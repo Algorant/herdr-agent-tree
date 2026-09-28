@@ -8,18 +8,23 @@ including across tabs and workspaces.
 It is an external Herdr plugin. It never changes Pi, never writes Pi-owned metadata, and
 never touches panes it cannot validate.
 
-Status: v0.2.0 source release for Linux and Herdr 0.9.0+. The Herdr-managed GitHub install
-was dogfooded on Herdr 0.9.1 with a real Pi root, Worker and Subagents, including managed
-reinstall, tree/native toggle and cleanup. The isolated `tests/e2e/sidebar.sh` and
-`tests/e2e/toggle.sh` also exercise the tree and shortcut (see "End-to-end test").
+Status: v0.2.0 is the latest source release; the current unreleased source keeps the
+package version unchanged until separate release preparation. It targets Linux and Herdr 0.9.0+.
+The Herdr-managed GitHub install was dogfooded on Herdr 0.9.1 with a real Pi
+root, Worker and Subagents, including managed reinstall, tree/native toggle and cleanup.
+The isolated `tests/e2e/sidebar.sh` and `tests/e2e/toggle.sh` exercise rendering and the
+shortcut (see "End-to-end test").
 
 ## How it works
 
-- Exactly two pane tokens are published, both namespaced to this plugin:
-  - `agent_tree_row` — the complete row value: workspace/tab location for ordinary rows or
-    depth/branch/role plus validated child identity, with task/attention only if room. Child
-    values are bounded to 20 characters.
+- Exactly two current pane tokens are published, both namespaced to this plugin:
+  - `agent_tree_branch` — only validated descendant markers: Workers show branch/role;
+    Subagents show branch/role and their own name, capped at 12 terminal display columns.
+    Roots and ordinary agents receive no branch token.
   - `agent_tree_rank` — a fixed-width 6-digit preorder rank, used only for sorting.
+- The former `agent_tree_row` token is never written by current code. Upgrades and cleanup
+  clear that legacy composed token as well as the current branch and rank, preserving other
+  metadata sources.
 - One `agent.view.set` projection (`source = plugin:agent-tree`, label `tree`) sorts by rank
   and then by native order, so unranked rows stay in native relative order after the ranked
   block.
@@ -62,7 +67,7 @@ Herdr end-to-end test below. The Rust suite runs against the plugin's own logic 
 standard test harness and needs no running Herdr server, no socket and no network. It covers
 identity recomputation and self-validation, unique parent resolution and the tokenless-parent
 refinement, every contract C5 degenerate case, preorder emission with family contiguity and
-native ordering, the rank format and its ceiling, the decoration grammar and 20-character cap,
+native ordering, the rank format and its ceiling, branch grammar and 12-display-column Subagent-name cap,
 the tree-off marker, the verified reload holder checks (including the `(deleted)` staged
 binary), the view-owner classification and toggle decision table, and the CLI boundary where
 `apply` clears the tree-off marker while `clear` and a fail-closed `toggle` leave it.
@@ -79,9 +84,10 @@ tests/e2e/toggle.sh       # owner-safe shortcut toggle; also run by `just test`
 ```
 
 The test builds the plugin, creates a fully isolated Herdr instance under a temp directory, and
-drives the plugin on a real delegation family: a root, a Worker beneath it, a Worker-owned
-Subagent beneath that Worker, a second root with its Subagent, two undelegating Pi sessions and
-a non-Pi row. It is noninteractive, has no options, never touches the active Herdr server, its
+drives the plugin on a real delegation family: a root, a Worker in its task workspace, two
+Subagents sharing the root's workspace/tab, a second unlinked root, two undelegating Pi sessions
+and a non-Pi row. It also injects a stale 0.2.0 composed token and verifies that the A2 row renders
+only the native workspace/tab cells. It is noninteractive, has no options, never touches the active Herdr server, its
 socket or `~/.config/herdr`, and removes the temp directory and isolated server on exit,
 including on failure or interrupt.
 
@@ -97,7 +103,8 @@ What it does, in order:
   cannot spend credits. Expect about 25 s and 1 GB RAM.
 - Publishes the pi-agency-shaped relationship tokens (`role`, `agency_self`, `agency_parent`,
   `task_id`, `handoff`, `question`) derived from those real session paths. It never writes
-  `agent_tree_row` or `agent_tree_rank`; the plugin computes those itself.
+  `agent_tree_branch` or `agent_tree_rank`; the plugin computes those. The only legacy
+  `agent_tree_row` write is the explicit migration fixture.
 - Applies the plugin, asserts the rank order, then forges a Subagent's `agency_self` and asserts
   the plugin recomputes and drops it before restoring the true value and the rank.
 - Renders the sidebar through a real tmux PTY and asserts the `tree` view label and a Worker row.
@@ -106,7 +113,7 @@ What it does, in order:
 sessions (one undelegating session plus a validated root/subagent family), installs the
 documented `prefix+t` binding in the isolated config, and presses it through a real tmux
 PTY: tree -> native -> tree -> native. It asserts the `tree` view label and projected order,
-that `agent_tree_row`/`agent_tree_rank` stay published when tree is off, that the native
+that `agent_tree_branch`/`agent_tree_rank` stay published when tree is off, that the native
 Agents header mouse toggle works again when tree is off, that a foreign view owner is never
 displaced by either the action or the shortcut, that `clear` still removes the plugin tokens
 and view, and that `config.toml` is byte-identical after the run (the plugin writes no
@@ -151,15 +158,15 @@ scripts/doctor.sh --endpoint local
 ```
 
 `activate-managed.sh` preserves the GitHub-managed registration, refuses to replace custom
-Agents rows, backs up the config when adding the required `$agent_tree_row` cell, reloads
-config, invokes `apply`, and **waits for the action log to succeed**. If you already have a
-user-owned `[ui.sidebar.agents]` block, manually update it to
-`rows = [["state_icon", "$agent_tree_row"]]` before activation; neither deploy nor activation
-rewrites user-owned blocks. The initial `action
-invoke` response is only a running acknowledgment, not proof of activation. The doctor
-should show one subscriber, a present sidebar cell, and ranked panes when a validated
-delegation family exists. No ranked family means no visible ordering difference even with
-an active tree view. The optional `prefix+t` binding is separate (see below).
+Agents rows, backs up the config when adding the required branch/native row, reloads config,
+invokes `apply`, and **waits for the action log to succeed**. A user-owned
+`[ui.sidebar.agents]` block is never rewritten. If it still references `$agent_tree_row`,
+manually migrate it to `rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]`
+before activation; this applies to both the 0.1.0 title-cell row and 0.2.0 composed row.
+Deploy and activation print that exact replacement. The initial `action invoke` response is
+only a running acknowledgment, not proof of activation. The doctor reports publisher
+compatibility, fallback state and old-row migration. The optional `prefix+t` binding is
+separate (see below).
 
 A normal user does not need a prebuilt binary: Herdr runs the locked Cargo release build
 itself, so the managed machine needs the Rust toolchain (1.81+), `cargo`, `git` and `rustc`.
@@ -178,9 +185,9 @@ herdr plugin action invoke agent-tree.apply
 herdr plugin log list --plugin agent-tree --limit 1  # require status: succeeded
 ```
 
-Without the rows block, the plugin's composed display has no cell to render into. The startup hook
-runs on the next **server start**, not on install or enable, which is why the explicit `apply`
-is part of activation.
+Without a row that references `$agent_tree_branch`, Herdr still renders the native
+workspace/tab cells but cannot show tree markers. The startup hook runs on the next **server
+start**, not on install or enable, which is why the explicit `apply` is part of activation.
 
 ### Update
 
@@ -352,8 +359,9 @@ subscriber or reports the exact rollback failure. It is reversible by re-running
 
 `scripts/doctor.sh` is read-only and reports, per endpoint: Herdr reachability/version/
 protocol, plugin registration and source, staged/running SHA-256 and subscriber count, toggle
-action availability and tree-off state, shortcut presence, `$agent_tree_row` presence, and
-pane counts. Pane classification uses only pane-published tokens: a pane that declares
+action availability and tree-off state, shortcut presence, `$agent_tree_branch` row presence,
+legacy `$agent_tree_row` migration state, native fallback state, and pane counts. Pane
+classification uses only pane-published tokens: a pane that declares
 `role` worker/subagent but lacks a complete relationship is counted separately from an
 ordinary tokenless Pi pane whose role is unknown. Nothing is inferred from a title, name, or
 cwd. A representative report where the local endpoint is healthy and a saved endpoint has the
@@ -368,7 +376,7 @@ endpoint: local (kind: local)
   subscriber:  1 running pids 961729 (sha256 matches registered executable)
   toggle:      action available, tree-off False
   shortcut:    present prefix+t
-  sidebar:     $agent_tree_row present
+  sidebar:     $agent_tree_branch ABSENT; legacy rows 0; migration none; fallback active
   panes:       relationship-bearing 3 (valid 3), ranked 6, delegated-without-relationship 0, ordinary Pi 8
   verdict:     healthy
 endpoint: archbox (kind: remote, machine cart-lab, ssh archbox, session default)
@@ -404,8 +412,8 @@ herdr plugin action invoke agent-tree.toggle
   so the toggle fails clearly and leaves the foreign view exactly as it found it. An owner
   that cannot be determined also fails closed.
 
-`agent_tree_row` and `agent_tree_rank` stay published in both states, so composed displays
-remain visible with tree ordering on or off; only the plugin-owned view changes. The tree-off state
+`agent_tree_branch` and `agent_tree_rank` stay published in both states, so validated tree
+markers remain visible with tree ordering on or off; only the plugin-owned view changes. The tree-off state
 is durable in a socket-scoped `tree-off-<tag>.flag` beside the subscriber lock, so a server
 restart resumes the same ordering.
 
@@ -447,45 +455,84 @@ whenever tree is off and is inert while tree is active, because Herdr disables t
 sort hit region for any active agent view; that is a Herdr client behaviour, not something
 this plugin overrides.
 
-## Agents row configuration (verified fragment)
+## Agents row configuration
 
-Herdr renders rows from `ui.sidebar.agents.rows`. This plugin's composed display only appears if
-the row template references `$agent_tree_row`. `scripts/deploy.sh` appends this exact fragment, and
-updates it on re-install if the managed block already exists (default cells keep the existing
-theme; no theme colours are redefined):
+Herdr renders each inner array in `ui.sidebar.agents.rows` as one line. The managed/default row
+uses the plugin's branch token followed by Herdr's native location cells:
 
 ```toml
 [ui.sidebar.agents]
+rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]
+```
+
+Roots, ordinary agents and non-Pi agents receive no branch token; the native cells still show
+`workspace · tab`. Workers receive only their validated branch/role marker because their task
+workspace identifies them. Subagents receive the branch/role marker plus their own name (from
+the Herdr agent name, falling back to the recognized Pi title prefix), capped at 12 terminal
+display columns including an ellipsis when truncated. The rank token is **not** rendered; it
+exists only for ordering. Current code never publishes `agent_tree_row`.
+
+### Migrating user-owned rows
+
+Deploy and activation update only their own marked config fragment. They never rewrite a
+user-owned `[ui.sidebar.agents]` block. If it contains either previous standard row, replace it
+manually with the new row above, then run `herdr server reload-config`:
+
+```toml
+# Agent Tree 0.1.0
+rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
+
+# Agent Tree 0.2.0
 rows = [["state_icon", "$agent_tree_row"]]
+
+# Current row
+rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]
 ```
 
-Deploy updates its own marked fragment, but deliberately leaves a foreign
-`[ui.sidebar.agents]` block byte-for-byte unchanged, including old rows that contain the token.
-For an existing user-owned `[ui.sidebar.agents]` block, manually migrate any multi-cell/custom
-row to the one-cell form above and reload Herdr config. Deploy does not rewrite foreign user
-configuration automatically.
+Deploy and activation print the exact replacement for either legacy row and leave the config
+byte-for-byte unchanged. The new token name is intentional: an endpoint still publishing the
+0.2.0 composed `agent_tree_row` then renders native workspace/tab only, rather than duplicating
+its old composed location.
 
-The plugin composes the complete one-line display value into that single token. Roots and
-ordinary agents show workspace · tab; validated descendants show branch/role followed by their
-own name (or a title with only the known `π - ` prefix stripped), then task/attention only when
-it fits. Non-Pi agents also receive a readable name/kind or location. The rank token is
-**not** rendered; it exists only for ordering.
+### Narrow sidebar behavior and Herdr 0.9.1 cell sizing
 
-Example from the isolated nested fixture (exact clipping varies with sidebar width):
+There is no documented per-cell width, priority, minimum-width, or shrink setting that reserves
+space for the branch cell while clipping `workspace` first. I checked the Herdr 0.9.1
+configuration guide and `herdr --default-config` in an isolated HOME/XDG/config setup. The
+schema documents overall `sidebar_width`, `sidebar_min_width` and `sidebar_max_width`, token
+ordering, inline styling, value-based rules/hiding, and `rows_by_agent` keyed by canonical agent
+kind; it does not document cell sizing or cross-token priority. No speculative syntax is used.
+
+The isolated 0.9.1 captures use a root (`root-alpha` / `main`), a Worker in
+`task-5 · herdr-agent-tree`, two Subagents sharing the root's `main` tab (`live-sidebar-verify`
+and `scout-release-notes`), plus tokenless fallback panes. For the A2+name row, Herdr clips
+the decoration and workspace cells while preserving the tab:
 
 ```
- ○ root-alpha · 1
- ○ └─W worker-task-3
- ○ │  └─S worker-own
- ○ lone-1 · 1
- ○ codex · codex-1 · 1
+26  ○ root-alpha · main
+    ○ ├─S s… · root-… · main
+    ○ ├─S l… · root-… · main
+    ○ └─W · task-5 · herdr-…
+32  ○ root-alpha · main
+    ○ ├─S scou… · root-alp… · main
+    ○ ├─S live… · root-alp… · main
+    ○ └─W · task-5 · herdr-agent-…
+36  ○ root-alpha · main
+    ○ ├─S scout-r… · root-alpha · main
+    ○ ├─S live-si… · root-alpha · main
+    ○ └─W · task-5 · herdr-agent-tree
 ```
 
-### Historical measurements (superseded by the one-cell display)
+The plugin caps each Subagent name at 12 display columns to bound its input; Herdr can clip
+that further to one visible initial at 26 columns. Its 0.9.1 config schema has no cell width,
+priority, minimum-width or shrink control to reserve the branch cell or clip `workspace` first.
+See the complete verbatim captures emitted by the isolated `tests/e2e/sidebar.sh` run.
 
-The old separate-title-cell layout described below is retained only as historical context; the
-current isolated test asserts that the new one-cell display preserves a Worker identity prefix
-and nested Subagent branch/role at 26, 32 and 36 columns, plus a default-width-settings render.
+### Historical measurements (pre-branch-token composed-row design)
+
+The following `agent_tree_row` measurements document the superseded 0.2.0 renderer only. The
+current isolated test asserts branch-only Workers, named Subagents, native fallbacks and stale
+legacy-token cleanup at 26, 32 and 36 columns.
 
 The same fixture was measured in the isolated instance at Herdr's `sidebar_min_width` (18),
 default `sidebar_width` (26), the test's pinned 32, and `sidebar_max_width` (36). A root title
@@ -507,48 +554,23 @@ agent IDs, so every Pi root, Worker and Subagent matches `pi`, and a `worker` ke
 by `herdr config check` (`unknown canonical agent id`). The measured alternatives and raw
 renders are in `docs/agent-tree/task-4-measurements.md`.
 
-### Previous identity alternatives (superseded)
+### Historical alternatives considered before the branch-token migration
 
-A Subagent row previously read `└─S · herdr · main`: it repeated the parent's workspace and
-tab and never named the Subagent. The fix is **option 3, row configuration**: render
-`terminal_title_stripped` instead of `workspace`/`tab`. No plugin token, contract or `.pi`
-change was needed.
+The original Subagent row repeated the parent's workspace and tab without naming the
+Subagent. An earlier row-configuration-only fix used `terminal_title_stripped`; the current
+fix publishes a separate `agent_tree_branch` token so old composed `agent_tree_row` values
+cannot duplicate native location cells.
 
-Pi already publishes the name, so option 1 (Pi-side naming) is satisfied as-is:
-`herdr agent list` gives Workers and Subagents durable names (`worker-task-108-459649c8`,
-`decoration-tracer`), and Pi titles every session itself — `π - ffsync` for a top-level
-session, `π - decoration-tracer - worker-task-5-…` for a Subagent (name first, parent context
-after), and `π - worker-task-108-…` for a Worker (the worktree name). Because the name is
-already on the wire, no `.pi` Task was filed; the gap was rendering only.
-
-The rejected alternatives and why:
-
-- **Option 2, name inside `agent_tree_row`.** The decoration is one 20-character token that
-also carries depth glyphs, branch, role, the Worker `task_id` and the attention glyph. The M2
-drop order is exactly the data a name would evict, and the C4 grammar
-(`indent branch role [task] [attention]`) has no name slot; it would also need `AgentRow`
-and digest changes for no gain over a built-in cell.
-- **The `agent` cell as the sole identity cell.** Isolated renders show `agent` is a real
-name cell (`worker-alpha`, not `pi`), but an unnamed agent renders its kind, and a top-level
-Pi session has `name = null`. It would show `pi` for every root — the uninformative row this
-Task set out to remove.
-- **`agent` plus `terminal_title_stripped`.** The sidebar divides the row across its cells;
-at 32 columns the fourth cell squeezed the name to `worker…` and the decoration to
-`└─W tas…`, losing the `task_id` and degrading nesting legibility.
-
-Width is why the decoration comes first and the title last: the title is clipped, not the
-nesting. The 20-character cap limits the token value, not the row, so the short decoration
-leaves most of the sidebar to the name. A Worker's title is long enough to clip at real
-sidebar widths; the decoration's `task-N` still identifies it and the
-`π - worker-task-N-…` prefix reinforces it. A real non-Pi agent with no terminal title
-renders an empty identity cell under this configuration; non-Pi rows are unranked, never
-decorated, and out of scope for task-5.
+Earlier row alternatives and their measurements are retained in
+`docs/agent-tree/task-4-measurements.md` and `docs/agent-tree/sidebar-identity-followup.md`.
+Those records predate the current branch token and native workspace/tab row; their composed-row
+conclusions are historical only.
 
 Optional styling with existing palette values (not verified in this session):
 
 ```toml
 # [ui.sidebar.agents]
-# rows = [["state_icon", { token = "agent_tree_row", fg = "#8ec07c", dim = true }]]
+# rows = [["state_icon", { token = "agent_tree_branch", fg = "#8ec07c", dim = true }, "workspace", "tab"]]
 ```
 
 Rollback of the fragment: delete the `[ui.sidebar.agents]` block (or restore the rows value
@@ -558,12 +580,13 @@ configuration; `scripts/deploy.sh` only manages the marked rows block above.
 ## Rollback
 
 ```sh
-herdr plugin action invoke agent-tree.clear   # clears only agent_tree_row/agent_tree_rank and our view
+herdr plugin action invoke agent-tree.clear   # clears branch, legacy row and rank tokens, plus our view
 herdr plugin disable agent-tree              # Herdr clears the view; tokens remain (see limitations)
 herdr plugin unlink agent-tree               # unregisters; leaves files alone
 ```
 
-`clear` removes exactly the two plugin tokens (source `agent-tree`) and only clears the view
+`clear` removes the current branch/rank tokens and any legacy composed row owned by
+`agent-tree`; it only clears the view
 when this plugin owns it; it writes no configuration. A running subscriber restores its
 projection on the next relevant event, so `clear` is a one-shot reset. To leave the tree for
 Herdr's native Agents list for more than a moment, use
@@ -575,7 +598,8 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
 
 - Rendered order for a two-root fixture: rank order `R1, W1, S1, R2, S2`, then the unranked
   rows in native order (`X1, L1, U1`); the sidebar header showed the `tree` label.
-- Worker-owned Subagent rendered at depth 2 (`│  └─S ?`), Worker row `└─W task-3 ▸`.
+- Worker-owned Subagent rendered at depth 2 with its short own name; Worker rows show only the
+  branch/role marker. Root and tokenless rows use native workspace/tab cells.
 - Cross-workspace: after moving the Worker's pane to another workspace the nesting and rank
   were preserved.
 - Parent exit: closing the root cleared the child's rank and decoration (no stale parent).
@@ -593,7 +617,7 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
   projection from the fresh snapshot.
 - No self-authored loop: with the projection installed and the tokens present, a 20-second
   idle window produced no further writes.
-- Every current agent row receives a composed display token; only validated descendants receive tree branches and ranks. Unlinked Pi and non-Pi rows remain readable and unranked.
+- Only validated descendants receive `agent_tree_branch`; roots and ordinary/non-Pi rows receive no branch token and use native workspace/tab cells. Ranks preserve preorder ordering. Unlinked Pi and non-Pi rows remain visible and unranked.
 
 ## Known limitations
 
@@ -618,11 +642,15 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
    tokens, or stop/clear this plugin first. Transient, non-destructive, self-healing. The
    conflict was a stated prerequisite for the live enable; the plugin has since been enabled
    live (2026-09-15), so it remains a caveat to watch rather than an open gate.
-6. **Descendant identity is intentionally bounded.** The composed descendant token is capped
-   at 20 characters; branch/role and the leading part of the child name take priority over task
-   and attention. The isolated PTY test verifies realistic Worker/Subagent identity prefixes
-   at 26, 32, 36, and Herdr default width settings. Ordinary location labels are sanitized and
-   capped at 64 characters; Herdr clips them to the current sidebar cell.
+6. **Narrow sidebar identity is clipped by Herdr's row renderer.** The plugin bounds a
+   Subagent's own name to 12 display columns, including an ellipsis; Herdr may display less
+   when the workspace/tab cells also need room. Workers show only a branch/role marker and rely
+   on their task workspace for identity. Herdr 0.9.1 exposes no per-cell width or priority
+   setting; measured 26/32/36 renders are in "Narrow sidebar behavior" above.
+7. **Endpoints without a compatible publisher have no tree markers.** With the new row
+   configuration, Herdr's native workspace/tab cells still render readable identities when a
+   plugin is absent, stopped, old, or unreachable. Upgrade endpoints to see validated branches;
+   migrate a user-owned legacy `$agent_tree_row` config manually as documented above.
 
 ## Unverified
 

@@ -26,9 +26,6 @@ pub struct Relationship {
     pub role: String,
     pub agency_self: String,
     pub agency_parent: String,
-    pub task_id: Option<String>,
-    pub handoff: Option<String>,
-    pub question: Option<String>,
 }
 
 /// Reads the relationship tokens. Returns `None` when any of the three is absent, so a
@@ -38,9 +35,6 @@ pub fn relationship(row: &AgentRow) -> Option<Relationship> {
         role: row.token("role")?,
         agency_self: row.token("agency_self")?,
         agency_parent: row.token("agency_parent")?,
-        task_id: row.token("task_id"),
-        handoff: row.token("handoff"),
-        question: row.token("question"),
     })
 }
 
@@ -56,24 +50,6 @@ pub fn is_self_valid(row: &AgentRow, relationship: &Relationship) -> bool {
     match row.session_path.as_deref() {
         Some(path) => self_hash(path) == relationship.agency_self,
         None => false,
-    }
-}
-
-/// Small attention hint derived from existing Worker handoff / Subagent question metadata.
-/// `missing`, absent and unknown produce nothing, and no glyph implies success or acceptance.
-pub fn attention(relationship: &Relationship) -> Option<char> {
-    match relationship.role.as_str() {
-        "worker" => match relationship.handoff.as_deref() {
-            Some("question") => Some('?'),
-            Some("failed") => Some('!'),
-            Some("reported") => Some('▸'),
-            _ => None,
-        },
-        "subagent" => match relationship.question.as_deref() {
-            Some(value) if !value.is_empty() => Some('?'),
-            _ => None,
-        },
-        _ => None,
     }
 }
 
@@ -199,44 +175,5 @@ mod tests {
             let relation = relationship(&row).expect("all tokens are present");
             assert!(!is_self_valid(&row, &relation), "{label} must be unlinked");
         }
-    }
-
-    #[test]
-    fn attention_uses_existing_metadata_only() {
-        fn worker(handoff: Option<&str>) -> Option<char> {
-            let mut row = testutil::with_token(testutil::pi_row("p", SESSION), "role", "worker");
-            row = testutil::with_token(row, "agency_self", SESSION_HASH);
-            row = testutil::with_token(row, "agency_parent", "parent");
-            if let Some(handoff) = handoff {
-                row = testutil::with_token(row, "handoff", handoff);
-            }
-            attention(&relationship(&row).unwrap())
-        }
-        assert_eq!(worker(Some("question")), Some('?'));
-        assert_eq!(worker(Some("failed")), Some('!'));
-        assert_eq!(worker(Some("reported")), Some('▸'));
-        for absent in [Some("missing"), Some("unknown"), Some(""), None] {
-            assert_eq!(
-                worker(absent),
-                None,
-                "handoff {absent:?} must not imply failure"
-            );
-        }
-
-        fn subagent(question: Option<&str>) -> Option<char> {
-            let mut row = testutil::with_token(testutil::pi_row("p", SESSION), "role", "subagent");
-            row = testutil::with_token(row, "agency_self", SESSION_HASH);
-            row = testutil::with_token(row, "agency_parent", "parent");
-            if let Some(question) = question {
-                row = testutil::with_token(row, "question", question);
-            }
-            attention(&relationship(&row).unwrap())
-        }
-        assert_eq!(subagent(Some("how?")), Some('?'));
-        assert_eq!(subagent(Some("")), None);
-        assert_eq!(subagent(None), None);
-
-        let unknown = testutil::linked("p", SESSION, "reviewer", "parent");
-        assert_eq!(attention(&relationship(&unknown).unwrap()), None);
     }
 }

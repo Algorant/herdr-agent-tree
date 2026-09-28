@@ -22,6 +22,8 @@ import config  # noqa: E402
 
 NON_PI = "agent-tree"
 ROLES = ("worker", "subagent")
+BRANCH_PLUGIN_VERSION = "0.3.0"
+FALLBACK_NOTE = "rows fall back to native workspace · tab without tree markers"
 
 
 def sha256_hex(text: str) -> str:
@@ -109,7 +111,10 @@ def build_endpoint(raw: dict) -> dict:
         "shortcut": {"present": False, "key": None, "occupied": False, "managed": False},
         "sidebar": {
             "section_present": False,
-            "agent_tree_row_present": False,
+            "agent_tree_branch_present": False,
+            "legacy_agent_tree_row_present": False,
+            "migration_needed": False,
+            "fallback_active": True,
             "managed_block_present": False,
             "foreign_without_token": False,
         },
@@ -121,6 +126,7 @@ def build_endpoint(raw: dict) -> dict:
 
     if raw.get("status_error") or not status:
         report["issues"].append("Herdr status is unavailable: %s" % (raw.get("status_error") or "no response"))
+        report["notes"].append(FALLBACK_NOTE)
         return report
     if not status.get("running"):
         report["issues"].append("the Herdr server is not running")
@@ -142,8 +148,10 @@ def build_endpoint(raw: dict) -> dict:
 
     if plugin:
         actions = [action.get("id") for action in plugin.get("actions") or []]
+        branch_version_ok = triple(plugin.get("version")) >= triple(BRANCH_PLUGIN_VERSION)
         report["plugin"] = {
             "registered": True,
+            "publishes_agent_tree_branch": branch_version_ok,
             "enabled": bool(plugin.get("enabled")),
             "plugin_root": plugin.get("plugin_root"),
             "manifest_path": plugin.get("manifest_path"),
@@ -163,8 +171,10 @@ def build_endpoint(raw: dict) -> dict:
         binary_suffix = ("target", "release", "agent-tree") if source_kind == "github" else ("src", "agent-tree")
         registered_binary = os.path.join(plugin.get("plugin_root") or "", *binary_suffix)
     else:
+        branch_version_ok = False
         report["plugin"] = {
             "registered": False,
+            "publishes_agent_tree_branch": False,
             "enabled": False,
             "plugin_root": None,
             "manifest_path": None,
@@ -210,9 +220,31 @@ def build_endpoint(raw: dict) -> dict:
     report["toggle"]["action_available"] = bool(report["plugin"] and report["plugin"]["toggle_available"])
 
     inspected = config.inspect(config_text.splitlines(keepends=True), config.DEFAULT_KEY)
+    legacy_rows = sum(
+        bool((agent.get("tokens") or {}).get("agent_tree_row")) for agent in raw.get("agents") or []
+    )
+    branch_rows = sum(
+        bool((agent.get("tokens") or {}).get("agent_tree_branch")) for agent in raw.get("agents") or []
+    )
+    branch_publisher = branch_version_ok or branch_rows > 0
+    report["plugin"]["publishes_agent_tree_branch"] = branch_publisher
+    branch_publisher_ready = bool(
+        report["herdr"]["running"]
+        and report["herdr"]["compatible"]
+        and branch_publisher
+        and report["plugin"]["enabled"]
+        and report["subscriber"]["count"] == 1
+        and report["subscriber"]["matches_registered"]
+    )
+    fallback_active = not branch_publisher_ready or legacy_rows > 0
     report["sidebar"] = {
         "section_present": inspected["sidebar_section_present"],
-        "agent_tree_row_present": inspected["sidebar_token_present"],
+        "agent_tree_branch_present": inspected["sidebar_token_present"],
+        "legacy_agent_tree_row_present": inspected["sidebar_legacy_token_present"],
+        "migration_needed": inspected["sidebar_legacy_token_present"],
+        "branch_rows": branch_rows,
+        "legacy_rows": legacy_rows,
+        "fallback_active": fallback_active,
         "managed_block_present": inspected["sidebar_managed_block_present"],
         "foreign_without_token": inspected["foreign_sidebar_block_without_token"],
     }
@@ -223,9 +255,13 @@ def build_endpoint(raw: dict) -> dict:
         "managed": inspected["shortcut_managed_block_present"],
     }
     if not inspected["sidebar_token_present"]:
-        report["issues"].append("[ui.sidebar.agents] does not reference $agent_tree_row; the tree cannot render")
+        report["issues"].append("[ui.sidebar.agents] does not reference $agent_tree_branch; tree markers cannot render")
+    if inspected["sidebar_legacy_token_present"]:
+        report["notes"].append(
+            "migration needed: replace $agent_tree_row with rows = [[\"state_icon\", \"$agent_tree_branch\", \"workspace\", \"tab\"]]"
+        )
     if inspected["foreign_sidebar_block_without_token"]:
-        report["notes"].append("a foreign [ui.sidebar.agents] block lacks the token and is left untouched")
+        report["notes"].append("a foreign [ui.sidebar.agents] block lacks $agent_tree_branch and is left untouched")
     if not inspected["shortcut_matching_present"]:
         report["notes"].append("the documented %s toggle shortcut is not present" % inspected["shortcut_key"])
 
@@ -239,6 +275,17 @@ def build_endpoint(raw: dict) -> dict:
         )
     if panes["ordinary_pi"]:
         report["notes"].append("%d ordinary Pi pane(s) declare no role (not delegated-looking)" % panes["ordinary_pi"])
+    if report["plugin"]["registered"] and not branch_publisher:
+        report["notes"].append(
+            "branch publisher capability is unproven: plugin version %s is below %s and no pane reports $agent_tree_branch"
+            % (report["plugin"]["version"], BRANCH_PLUGIN_VERSION)
+        )
+    if legacy_rows:
+        report["notes"].append(
+            "%d pane(s) still publish legacy $agent_tree_row values from the composed-row plugin" % legacy_rows
+        )
+    if fallback_active:
+        report["notes"].append(FALLBACK_NOTE)
 
     if not report["issues"]:
         report["verdict"] = "healthy"
@@ -312,9 +359,15 @@ def render_text(reports, split: bool) -> str:
                 " (occupied by another command)" if report["shortcut"]["occupied"] else "",
             )
         )
+        sidebar = report["sidebar"]
         lines.append(
-            "  sidebar:     $agent_tree_row %s"
-            % ("present" if report["sidebar"]["agent_tree_row_present"] else "ABSENT")
+            "  sidebar:     $agent_tree_branch %s; legacy rows %d; migration %s; fallback %s"
+            % (
+                "present" if sidebar["agent_tree_branch_present"] else "ABSENT",
+                sidebar["legacy_rows"],
+                "needed" if sidebar["migration_needed"] else "none",
+                "active" if sidebar["fallback_active"] else "inactive",
+            )
         )
         panes = report["panes"]
         lines.append(

@@ -448,7 +448,7 @@ BUILD_SHA=$(sha256sum "$CARGO_TARGET_DIR/release/agent-tree" | awk '{print $1}')
 [ -f "$ENABLED_FILE" ] || fail 'the plugin was not enabled'
 [ -f "$RELOAD_MARKER" ] || fail 'the endpoint config was not reloaded after installing fragments'
 [ ! -e "$DEPLOY_LOCK" ] || fail 'the deploy lock was not released'
-grep -qF '$agent_tree_row' "$REMOTE_CONFIG/config.toml" || fail 'the managed sidebar fragment was not installed'
+grep -qF '$agent_tree_branch' "$REMOTE_CONFIG/config.toml" || fail 'the managed sidebar fragment was not installed'
 grep -qF "$BIN/herdr plugin action invoke agent-tree.toggle" "$REMOTE_CONFIG/config.toml" \
     || fail 'the managed shortcut did not use the resolved absolute herdr path'
 python3 - "$(probe_path "$REMOTE_STAGE/src/agent-tree")" <<'PY' || fail 'the endpoint subscriber was not verified'
@@ -470,6 +470,37 @@ run_deploy >"$SB/deploy2.out" 2>"$SB/deploy2.err" || { cat "$SB/deploy2.err" >&2
 grep -q 'left byte-for-byte untouched' "$SB/deploy2.err" || fail 'redeploy did not report the preserved config'
 [ ! -e "$DEPLOY_LOCK" ] || fail 'redeploy left the deploy lock'
 pass 'redeploy preserves the installed config and leaves exactly one subscriber'
+
+# ---------------------------------------------------------------------------
+# 2a. A marked 0.2.0 sidebar block is plugin-owned and migrates during endpoint upgrade.
+# ---------------------------------------------------------------------------
+printf '== managed legacy sidebar migration\n'
+reset_remote
+cat >"$REMOTE_CONFIG/config.toml" <<'TOML'
+# >>> agent-tree sidebar rows >>>
+[ui.sidebar.agents]
+rows = [["state_icon", "$agent_tree_row"]]
+# <<< agent-tree sidebar rows <<<
+TOML
+python3 - "$ROOT/scripts/lib/config.py" "$REMOTE_CONFIG/config.toml" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("config", sys.argv[1])
+config = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(config)
+inspect = config.inspect(open(sys.argv[2]).read().splitlines(keepends=True), config.DEFAULT_KEY)
+assert inspect["sidebar_managed_block_present"] is True, inspect
+assert inspect["sidebar_legacy_token_present"] is True, inspect
+assert inspect["foreign_sidebar_block_without_token"] is False, inspect
+assert inspect["foreign_sidebar_block_with_legacy_token"] is False, inspect
+PY
+run_deploy >"$SB/managed-row.out" 2>"$SB/managed-row.err" \
+    || { cat "$SB/managed-row.err" >&2; fail 'managed legacy sidebar upgrade was refused'; }
+grep -qF 'rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]' "$REMOTE_CONFIG/config.toml" \
+    || fail 'endpoint upgrade did not replace the managed legacy sidebar rows'
+grep -qF '<<< agent-tree sidebar rows <<<' "$REMOTE_CONFIG/config.toml" \
+    || fail 'endpoint upgrade damaged its managed-fragment markers'
+grep -qF '$agent_tree_row' "$REMOTE_CONFIG/config.toml" && fail 'endpoint upgrade left the old token in its managed fragment' || true
+pass 'a managed 0.2.0 sidebar fragment upgrades in place without treating it as foreign'
 
 # ---------------------------------------------------------------------------
 # 2b. A managed prefix+alt+t shortcut migrates to prefix+t; a foreign prefix+t
@@ -577,6 +608,26 @@ TOML
 run_deploy >"$SB/occupied.out" 2>"$SB/occupied.err" && fail 'deploy overwrote an occupied shortcut' || true
 grep -q 'bound to another command' "$SB/occupied.err" || fail 'deploy did not explain the occupied shortcut'
 pass 'foreign sidebar blocks and a foreign prefix+t shortcut are refused before mutation'
+
+# ---------------------------------------------------------------------------
+# 5b. Both legacy user-owned Agent Tree rows are preserved with the exact replacement printed.
+# ---------------------------------------------------------------------------
+for legacy_rows in \
+  'rows = [["state_icon", "$agent_tree_row"]]' \
+  'rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]'; do
+    reset_remote
+    printf '[ui.sidebar.agents]\n%s\n' "$legacy_rows" > "$REMOTE_CONFIG/config.toml"
+    BEFORE=$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')
+    run_deploy >"$SB/legacy-row.out" 2>"$SB/legacy-row.err" && fail 'deploy rewrote a legacy user-owned row' || true
+    grep -qF 'still references $agent_tree_row' "$SB/legacy-row.err" \
+        || fail 'deploy did not identify the legacy row for migration'
+    grep -qF 'rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]' "$SB/legacy-row.err" \
+        || fail 'deploy did not print the exact replacement row'
+    [ "$BEFORE" = "$(sha256sum "$REMOTE_CONFIG/config.toml" | awk '{print $1}')" ] \
+        || fail 'deploy modified the legacy user-owned row'
+    [ ! -e "$REMOTE_STAGE" ] || fail 'legacy-row preflight refusal mutated the stage'
+done
+pass 'both 0.1.0 and 0.2.0 user rows remain untouched and print the exact replacement'
 
 # ---------------------------------------------------------------------------
 # 6. Substep commit failure restores `.stage-old` to `stage`.
@@ -698,7 +749,7 @@ if ! run_uninstall >"$SB/unin2.out" 2>"$SB/unin2.err"; then cat "$SB/unin2.out" 
 [ ! -e "$REMOTE_STAGE" ] || fail 'uninstall left the staged plugin root'
 [ ! -f "$REG_FILE" ] || fail 'uninstall left the plugin registered'
 [ ! -e "$DEPLOY_LOCK" ] || fail 'uninstall left the deploy lock'
-grep -qF '$agent_tree_row' "$REMOTE_CONFIG/config.toml" && fail 'uninstall left the managed sidebar fragment' || true
+grep -qF '$agent_tree_branch' "$REMOTE_CONFIG/config.toml" && fail 'uninstall left the managed sidebar fragment' || true
 pass 'uninstall stops the verified subscriber and its lock before deleting the stage'
 
 step "scenario 10b: uninstall foreign subscriber"
@@ -772,7 +823,7 @@ DAMAGED=$SB/damaged.toml
 cat >"$DAMAGED" <<'TOML'
 # >>> agent-tree sidebar rows >>>
 [ui.sidebar.agents]
-rows = [["state_icon", "$agent_tree_row"]]
+rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]
 TOML
 if python3 "$ROOT/scripts/lib/config.py" remove --file "$DAMAGED" --out "$SB/damaged.out" >"$SB/damaged.json" 2>"$SB/damaged.err"; then
     fail 'config.py remove accepted damaged markers'

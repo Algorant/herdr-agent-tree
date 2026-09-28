@@ -17,11 +17,8 @@ pub const SUBSCRIBED_EVENTS: &[&str] = &[
     "tab.created",
     "tab.closed",
     "tab.moved",
-    "tab.renamed",
     "workspace.created",
     "workspace.closed",
-    "workspace.renamed",
-    "workspace.updated",
     "workspace.moved",
     "workspace.reordered",
 ];
@@ -29,14 +26,10 @@ pub const SUBSCRIBED_EVENTS: &[&str] = &[
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AgentRow {
     pub pane_id: String,
-    pub workspace_id: String,
-    pub tab_id: String,
     pub agent: String,
     pub agent_status: String,
     pub name: Option<String>,
     pub terminal_title_stripped: Option<String>,
-    pub workspace_label: Option<String>,
-    pub tab_label: Option<String>,
     /// A pane-only snapshot row used solely to clear stale plugin-owned tokens after agent release.
     pub cleanup_only: bool,
     /// Present only when Herdr exposes a native session reference of kind `path`.
@@ -57,14 +50,10 @@ impl AgentRow {
         let pane_id = value.get("pane_id")?.as_str()?.to_string();
         Some(AgentRow {
             pane_id,
-            workspace_id: text(value, "workspace_id"),
-            tab_id: text(value, "tab_id"),
             agent: text(value, "agent"),
             agent_status: text(value, "agent_status"),
             name: optional_text(value, "name"),
             terminal_title_stripped: optional_text(value, "terminal_title_stripped"),
-            workspace_label: optional_text(value, "workspace_label"),
-            tab_label: optional_text(value, "tab_label"),
             cleanup_only: false,
             session_path: session_path(value),
             tokens: tokens(value),
@@ -157,12 +146,7 @@ impl Model {
             hasher.update(b"\x1f");
             hasher.update(row.agent.as_bytes());
             hasher.update(b"\x1f");
-            for value in [
-                row.name.as_deref(),
-                row.terminal_title_stripped.as_deref(),
-                row.workspace_label.as_deref(),
-                row.tab_label.as_deref(),
-            ] {
+            for value in [row.name.as_deref(), row.terminal_title_stripped.as_deref()] {
                 hasher.update(value.unwrap_or_default().as_bytes());
                 hasher.update(b"\x1f");
             }
@@ -171,13 +155,12 @@ impl Model {
             hasher.update(row.session_path.as_deref().unwrap_or("").as_bytes());
             hasher.update(b"\x1f");
             for name in [
-                crate::projection::ROW_TOKEN,
+                crate::projection::BRANCH_TOKEN,
+                crate::projection::LEGACY_ROW_TOKEN,
                 crate::projection::RANK_TOKEN,
                 "role",
                 "agency_self",
                 "agency_parent",
-                "handoff",
-                "question",
             ] {
                 hasher.update(row.token(name).unwrap_or_default().as_bytes());
                 hasher.update(b"\x1f");
@@ -205,7 +188,7 @@ pub fn server_tag(socket: &str) -> String {
     digest[..16].to_string()
 }
 
-/// Authoritative rows and location labels from one coherent Herdr session snapshot.
+/// Authoritative agent rows plus pane-only records needed to clear stale plugin metadata.
 pub fn fetch_rows(socket: &str) -> R<Vec<AgentRow>> {
     let result = crate::wire::request(socket, "session.snapshot", json!({}))?;
     let snapshot = result
@@ -215,24 +198,14 @@ pub fn fetch_rows(socket: &str) -> R<Vec<AgentRow>> {
 }
 
 fn rows_from_snapshot(snapshot: &Value) -> R<Vec<AgentRow>> {
-    let workspaces = labels_by_id(
-        snapshot,
-        "workspaces",
-        "workspace_id",
-        "session.snapshot workspaces",
-    )?;
-    let tabs = labels_by_id(snapshot, "tabs", "tab_id", "session.snapshot tabs")?;
     let mut rows = rows_from(snapshot, "agents", "session.snapshot")?;
     let agent_panes: std::collections::HashSet<String> =
         rows.iter().map(|row| row.pane_id.clone()).collect();
-    for row in &mut rows {
-        row.workspace_label = workspaces.get(&row.workspace_id).cloned();
-        row.tab_label = tabs.get(&row.tab_id).cloned();
-    }
     let panes = rows_from(snapshot, "panes", "session.snapshot")?;
     rows.extend(panes.into_iter().filter_map(|mut pane| {
         if agent_panes.contains(&pane.pane_id)
-            || (pane.token(crate::projection::ROW_TOKEN).is_none()
+            || (pane.token(crate::projection::BRANCH_TOKEN).is_none()
+                && pane.token(crate::projection::LEGACY_ROW_TOKEN).is_none()
                 && pane.token(crate::projection::RANK_TOKEN).is_none())
         {
             return None;
@@ -241,27 +214,6 @@ fn rows_from_snapshot(snapshot: &Value) -> R<Vec<AgentRow>> {
         Some(pane)
     }));
     Ok(rows)
-}
-
-fn labels_by_id(
-    container: &Value,
-    key: &str,
-    id_key: &str,
-    source: &str,
-) -> R<HashMap<String, String>> {
-    let array = container
-        .get(key)
-        .and_then(Value::as_array)
-        .ok_or_else(|| format!("{source} returned no {key} array"))?;
-    Ok(array
-        .iter()
-        .filter_map(|value| {
-            Some((
-                value.get(id_key)?.as_str()?.to_string(),
-                value.get("label")?.as_str()?.to_string(),
-            ))
-        })
-        .collect())
 }
 
 fn rows_from(container: &Value, key: &str, source: &str) -> R<Vec<AgentRow>> {
@@ -289,8 +241,6 @@ mod tests {
     fn from_value_reads_identity_fields_and_string_tokens() {
         let value = json!({
             "pane_id": "p1",
-            "workspace_id": "w",
-            "tab_id": "t",
             "agent": "pi",
             "agent_status": "idle",
             "name": "helper",
@@ -300,8 +250,6 @@ mod tests {
         });
         let row = AgentRow::from_value(&value).unwrap();
         assert_eq!(row.pane_id, "p1");
-        assert_eq!(row.workspace_id, "w");
-        assert_eq!(row.tab_id, "t");
         assert_eq!(row.agent, "pi");
         assert_eq!(row.agent_status, "idle");
         assert_eq!(row.name.as_deref(), Some("helper"));
@@ -391,77 +339,43 @@ mod tests {
             digest(renamed),
             "agent name is a display input"
         );
-        let mut relabeled = rows();
-        relabeled[0].workspace_label = Some("new workspace".to_string());
-        assert_ne!(
-            digest(rows()),
-            digest(relabeled),
-            "workspace label is a display input"
-        );
-        let mut retabbed = rows();
-        retabbed[0].tab_label = Some("new tab".to_string());
-        assert_ne!(
-            digest(rows()),
-            digest(retabbed),
-            "tab label is a display input"
-        );
         let mut retitled = rows();
         retitled[0].terminal_title_stripped = Some("π - changed".to_string());
         assert_ne!(digest(rows()), digest(retitled), "title is a display input");
     }
 
     #[test]
-    fn snapshot_joins_agent_location_ids_to_authoritative_workspace_and_tab_labels() {
+    fn snapshot_keeps_agent_rows_and_only_carries_panes_with_stale_plugin_tokens() {
         let snapshot = json!({
             "agents": [{
                 "pane_id": "p1", "workspace_id": "w1", "tab_id": "t1", "agent": "pi",
                 "agent_status": "idle", "name": null,
                 "agent_session": {"kind": "path", "value": "/s/p1.jsonl"}
             }],
-            "workspaces": [{"workspace_id": "w1", "label": "project"}],
-            "tabs": [{"tab_id": "t1", "label": "main"}],
-            "panes": [{"pane_id": "p1", "workspace_id": "w1", "tab_id": "t1"}]
+            "panes": [
+                {"pane_id": "p1", "workspace_id": "w1", "tab_id": "t1"},
+                {"pane_id": "ordinary", "workspace_id": "w1", "tab_id": "t1", "tokens": {"other": "keep"}},
+                {"pane_id": "legacy", "workspace_id": "w1", "tab_id": "t1", "tokens": {"agent_tree_row": "old row"}},
+                {"pane_id": "branch", "workspace_id": "w1", "tab_id": "t1", "tokens": {"agent_tree_branch": "└─S name"}},
+                {"pane_id": "rank", "workspace_id": "w1", "tab_id": "t1", "tokens": {"agent_tree_rank": "000007"}}
+            ]
         });
         let rows = rows_from_snapshot(&snapshot).unwrap();
-        assert_eq!(rows[0].workspace_label.as_deref(), Some("project"));
-        assert_eq!(rows[0].tab_label.as_deref(), Some("main"));
-        assert_eq!(
-            rows.len(),
-            1,
-            "an ordinary pane does not duplicate its agent row"
-        );
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0].pane_id, "p1");
+        assert!(rows[1..].iter().all(|row| row.cleanup_only));
+        assert_eq!(rows[1].pane_id, "legacy");
+        assert_eq!(rows[2].pane_id, "branch");
+        assert_eq!(rows[3].pane_id, "rank");
     }
 
     #[test]
-    fn released_pane_with_plugin_tokens_is_retained_only_for_owned_token_cleanup() {
-        let snapshot = json!({
-            "agents": [],
-            "workspaces": [{"workspace_id": "w1", "label": "project"}],
-            "tabs": [{"tab_id": "t1", "label": "main"}],
-            "panes": [{
-                "pane_id": "released", "workspace_id": "w1", "tab_id": "t1",
-                "tokens": {"agent_tree_row": "old row", "agent_tree_rank": "000007", "other": "keep"}
-            }]
-        });
-        let rows = rows_from_snapshot(&snapshot).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].cleanup_only);
-        assert_eq!(
-            rows[0].token(crate::projection::ROW_TOKEN).as_deref(),
-            Some("old row")
-        );
-        assert_eq!(rows[0].token("other").as_deref(), Some("keep"));
-    }
-
-    #[test]
-    fn subscription_covers_agent_and_location_display_refresh_events() {
-        for event in [
-            "pane.updated",
-            "workspace.renamed",
-            "workspace.updated",
-            "tab.renamed",
-        ] {
+    fn subscription_tracks_identity_and_placement_but_not_label_renames() {
+        for event in ["pane.updated", "workspace.moved", "tab.moved"] {
             assert!(SUBSCRIBED_EVENTS.contains(&event), "missing {event}");
+        }
+        for event in ["workspace.renamed", "workspace.updated", "tab.renamed"] {
+            assert!(!SUBSCRIBED_EVENTS.contains(&event), "unexpected {event}");
         }
     }
 }

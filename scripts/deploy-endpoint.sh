@@ -725,8 +725,10 @@ inspect=$(python3 "$LIB/config.py" inspect --file "$ORIGINAL_CONFIG") \
 python3 - "$inspect" <<'PY' || fail "the endpoint configuration cannot be completed safely (phase: preflight)"
 import json, sys
 data = json.loads(sys.argv[1])
+if data["foreign_sidebar_block_with_legacy_token"]:
+    raise SystemExit("foreign [ui.sidebar.agents] block still references $agent_tree_row; it will not be overwritten. Manually replace its row with: rows = [[\"state_icon\", \"$agent_tree_branch\", \"workspace\", \"tab\"]]")
 if data["foreign_sidebar_block_without_token"]:
-    raise SystemExit("refusing: a foreign [ui.sidebar.agents] block does not reference $agent_tree_row; it will not be overwritten")
+    raise SystemExit("refusing: a foreign [ui.sidebar.agents] block does not reference $agent_tree_branch; it will not be overwritten. Manually use: rows = [[\"state_icon\", \"$agent_tree_branch\", \"workspace\", \"tab\"]]")
 if data["shortcut_key_occupied"]:
     raise SystemExit("refusing: shortcut %r is bound to another command" % data["shortcut_key"])
 if data["sidebar_managed_block_damaged"] or data["shortcut_managed_block_damaged"]:
@@ -891,7 +893,7 @@ if [ "$CONFIG_CHANGED" = 1 ]; then
     || fail "the subscriber pid changed from $pid_before to $pid_after after the config reload (phase: verify)"
   step "subscriber stable at pid $pid_after"
 else
-  note "the endpoint config already references \$agent_tree_row and the toggle shortcut; left byte-for-byte untouched"
+  note "the endpoint config already references \$agent_tree_branch and the toggle shortcut; left byte-for-byte untouched"
 fi
 
 if [ "$PRIOR_STAGE_PRESENT" = 1 ]; then

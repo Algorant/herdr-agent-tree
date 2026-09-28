@@ -6,8 +6,14 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- The managed Agents row is now `[["state_icon", "$agent_tree_branch", "workspace", "tab"]]`. The plugin publishes the new `agent_tree_branch` token, never writes the old composed `agent_tree_row`, leaves roots and ordinary/non-Pi agents to Herdr's native workspace/tab cells, shows Workers as branch/role markers only, and adds a Subagent's own name capped at 12 terminal display columns.
+- User-owned rows using either previous layout — 0.1.0 `["state_icon", "$agent_tree_row", "terminal_title_stripped"]` or 0.2.0 `["state_icon", "$agent_tree_row"]` — are never rewritten. Deploy and activation print the exact replacement row for manual migration. Upgrade cleanup clears stale `agent_tree_row` together with `agent_tree_branch` and `agent_tree_rank`, preserving every other source's metadata.
+
 ### Fixed
 
+- Agents viewed through endpoints without a compatible branch-token publisher now retain readable native `workspace · tab` rows instead of icon-only rows. The endpoint doctor flags endpoints without a live branch-capable publisher, including old 0.1.0 plugins and 0.2.0 plugins still publishing composed-row tokens, and separately reports configs that still need the old-token migration.
 - Local dogfood deploy refuses before building, staging, changing config, or relinking when the registered managed checkout still owns the socket's subscriber. Herdr 0.9.1 `herdr plugin disable agent-tree` and `herdr plugin unlink agent-tree` leave its detached subscriber running; disable the plugin, verify the reported PID is still the same-UID `agent-tree subscriber` with the reported managed executable and matching `HERDR_SOCKET_PATH`, run `kill -TERM <pid>`, wait for it to exit, then retry the printed deploy command. Deploy never signals a process.
 
 ## [0.2.0] - 2026-09-27

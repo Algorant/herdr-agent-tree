@@ -7,7 +7,7 @@
 # free idle Pi agents to obtain genuine agent_session values, publishes the pi-agency-shaped
 # relationship tokens derived from those real session paths, and then drives the documented
 # `[[keys.command]]` binding `prefix+t` through native -> tree -> native. It asserts the
-# `tree` view label and projected order through a real tmux PTY, that agent_tree_row and
+# `tree` view label and projected order through a real tmux PTY, that agent_tree_branch and
 # agent_tree_rank stay published with tree ordering off, that config.toml is never written,
 # that the native Agents header mouse toggle works again when tree is off, and that a foreign
 # view owner is never displaced.
@@ -122,7 +122,7 @@ sidebar_max_width = 32
 mouse_capture = true
 
 [ui.sidebar.agents]
-rows = [["state_icon", "\$agent_tree_row"]]
+rows = [["state_icon", "\$agent_tree_branch", "workspace", "tab"]]
 
 [keys]
 prefix = "ctrl+b"
@@ -262,8 +262,8 @@ step "Published the validated root-alpha -> sub-alpha edge"
 cap() { tmux -S "$TMUX_SOCKET" capture-pane -p -t "$SESSION" 2>/dev/null || true; }
 header() { cap | grep -oE 'agents +[a-z]+' | tail -1 | awk '{print $2}'; }
 # The sidebar is the first 31 columns of the capture; the 32nd is its border. `cut -c`
-# counts bytes in this test's POSIX locale, so a decorated row such as
-# `○ └─S ? · π - sub-alpha` loses the tail of the name before grep. Slice by character
+# counts bytes in this test's POSIX locale, so a row such as `○ └─S sub-alpha · ...`
+# loses the tail of the name before grep. Slice by character
 # instead, which keeps valid multibyte decorations and still excludes the main pane.
 sidebar_region() {
     python3 -c '
@@ -277,7 +277,7 @@ order_after_header() {
     line=$(cap | grep -nE 'agents +[a-z]+' | tail -1 | cut -d: -f1) || true
     [ -n "$line" ] || return 0
     cap | tail -n +"$((line + 1))" | sidebar_region \
-        | grep -oE 'lone-1|root-alpha|sub-alpha' | head -3 | paste -sd, -
+        | grep -oE 'lone-1|root-alpha|sub-alpha' | awk 'previous != $0 { print; previous=$0 }' | head -3 | paste -sd, -
 }
 wait_header() { # <expected> [attempts]
     local want="$1" tries="${2:-40}" got=""
@@ -361,9 +361,10 @@ config_has_sort() {
 assert_decorations_retained() { # <label>
     [ "$(token_of "$P_R1" agent_tree_rank)" = "000001" ] || fail "$1: root-alpha rank lost while tree was off"
     [ "$(token_of "$P_S1" agent_tree_rank)" = "000002" ] || fail "$1: sub-alpha rank lost while tree was off"
-    [ "$(token_of "$P_R1" agent_tree_row)" = "root-alpha · 1" ] || fail "$1: composed root row lost/changed: $(token_of "$P_R1" agent_tree_row)"
-    [[ "$(token_of "$P_S1" agent_tree_row)" == "└─S sub-alpha"* ]] || fail "$1: composed child row lost/changed: $(token_of "$P_S1" agent_tree_row)"
-    step "$1: composed agent_tree_row values and ranks remain published"
+    [ "$(token_of "$P_R1" agent_tree_branch)" = "-" ] || fail "$1: root unexpectedly has a branch marker"
+    [ "$(token_of "$P_S1" agent_tree_branch)" = "└─S sub-alpha" ] || fail "$1: Subagent branch/name changed: $(token_of "$P_S1" agent_tree_branch)"
+    [ "$(token_of "$P_R1" agent_tree_row)" = "-" ] || fail "$1: legacy composed token was republished"
+    step "$1: branch token and ranks remain published; legacy row stays absent"
 }
 
 # ---------------------------------------------------------------------------
@@ -503,7 +504,8 @@ for _ in $(seq 1 40); do
 done
 [ "$(token_of "$P_R1" agent_tree_rank)" = "-" ] || fail "clear did not remove the plugin rank"
 for pane in "$P_L1" "$P_R1" "$P_S1"; do
-    [ "$(token_of "$pane" agent_tree_row)" = "-" ] || fail "clear left plugin row metadata on $pane"
+    [ "$(token_of "$pane" agent_tree_branch)" = "-" ] || fail "clear left plugin branch metadata on $pane"
+    [ "$(token_of "$pane" agent_tree_row)" = "-" ] || fail "clear left legacy row metadata on $pane"
     [ "$(token_of "$pane" agent_tree_rank)" = "-" ] || fail "clear left plugin rank metadata on $pane"
 done
 [ "$(token_of "$P_L1" fixture_keep)" = "kept" ] || fail "clear removed metadata owned by toggle-fixture"

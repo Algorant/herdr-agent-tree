@@ -14,8 +14,6 @@ pub struct Placement {
     pub depth: usize,
     pub is_last_sibling: bool,
     pub role: String,
-    pub task_id: Option<String>,
-    pub attention: Option<char>,
     pub rank: u32,
 }
 
@@ -142,8 +140,6 @@ fn emit(
         depth,
         is_last_sibling,
         role: relationship.map(|r| r.role.clone()).unwrap_or_default(),
-        task_id: relationship.and_then(|r| r.task_id.clone()),
-        attention: relationship.and_then(identity::attention),
         rank: *rank,
     });
     *rank += 1;
@@ -306,7 +302,6 @@ mod tests {
             placements[0].role, "",
             "the root carries no relationship tokens"
         );
-        assert_eq!(placements[0].attention, None);
         assert_eq!(placements[1].depth, 1);
     }
 

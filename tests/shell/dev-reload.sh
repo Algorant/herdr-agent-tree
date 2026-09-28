@@ -391,14 +391,14 @@ run_deploy "$USER_CONFIG_DIR" >"$SANDBOX/out5" 2>"$SANDBOX/err5" \
     || { cat "$SANDBOX/err5" >&2; fail 'deploy with a user-owned config failed'; }
 AFTER=$(sha256sum "$USER_CONFIG" | awk '{ print $1 }')
 [ "$BEFORE" = "$AFTER" ] || fail 'deploy modified a user-owned [ui.sidebar.agents] block'
-grep -qF 'rows = [["state_icon", "$agent_tree_row"]]' "$SANDBOX/out5" \
-    || fail 'deploy did not print the exact rows fragment for a block missing $agent_tree_row'
-if grep -qF '$agent_tree_row' "$USER_CONFIG"; then
+grep -qF 'rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]' "$SANDBOX/out5" \
+    || fail 'deploy did not print the exact native-fallback row'
+if grep -qF '$agent_tree_branch' "$USER_CONFIG"; then
     fail 'deploy wrote into the user-owned block'
 fi
 pass 'a user-owned sidebar block is preserved and the missing fragment is printed'
 
-# 5b. A user-owned block that already references $agent_tree_row needs no fragment.
+# 5b. A foreign 0.2.0 row referencing the legacy token stays untouched and gets an exact replacement.
 USER_CONFIG_DIR2=$SANDBOX/user-config-ok
 mkdir -p "$USER_CONFIG_DIR2/herdr"
 USER_CONFIG2=$USER_CONFIG_DIR2/herdr/config.toml
@@ -413,9 +413,45 @@ AFTER2=$(sha256sum "$USER_CONFIG2" | awk '{ print $1 }')
 [ "$BEFORE2" = "$AFTER2" ] || fail 'deploy modified a complete user-owned block'
 grep -qF 'this user-owned block was left byte-for-byte unchanged' "$SANDBOX/out5b" \
     || fail 'deploy did not preserve the user block and identify the migration boundary'
-grep -qF 'rows = [["state_icon", "$agent_tree_row"]]' "$SANDBOX/out5b" \
-    || fail 'deploy did not print the one-cell row for manual migration'
-pass 'a user-owned block is left alone and receives the explicit one-cell migration fragment'
+grep -qF 'rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]' "$SANDBOX/out5b" \
+    || fail 'deploy did not print the exact replacement row for the legacy token'
+pass 'a user-owned legacy row is left alone and receives the explicit replacement fragment'
+
+# 5c. The 0.1.0 title-cell layout receives the same exact replacement without mutation.
+USER_CONFIG_DIR3=$SANDBOX/user-config-0.1
+mkdir -p "$USER_CONFIG_DIR3/herdr"
+USER_CONFIG3=$USER_CONFIG_DIR3/herdr/config.toml
+cat >"$USER_CONFIG3" <<'TOML'
+[ui.sidebar.agents]
+rows = [["state_icon", "$agent_tree_row", "terminal_title_stripped"]]
+TOML
+BEFORE3=$(sha256sum "$USER_CONFIG3" | awk '{ print $1 }')
+run_deploy "$USER_CONFIG_DIR3" >"$SANDBOX/out5c" 2>"$SANDBOX/err5c" \
+    || { cat "$SANDBOX/err5c" >&2; fail 'deploy with the 0.1.0 row failed'; }
+[ "$BEFORE3" = "$(sha256sum "$USER_CONFIG3" | awk '{ print $1 }')" ] \
+    || fail 'deploy modified the 0.1.0 user-owned row'
+grep -qF 'rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]' "$SANDBOX/out5c" \
+    || fail 'deploy did not print the exact replacement row for the 0.1.0 layout'
+pass 'both documented legacy layouts remain untouched and show the exact new row'
+
+# 5d. A marked managed 0.2.0 fragment is owned by deploy and migrates in place.
+USER_CONFIG_DIR4=$SANDBOX/managed-legacy-config
+mkdir -p "$USER_CONFIG_DIR4/herdr"
+USER_CONFIG4=$USER_CONFIG_DIR4/herdr/config.toml
+cat >"$USER_CONFIG4" <<'TOML'
+# >>> agent-tree sidebar rows >>>
+[ui.sidebar.agents]
+rows = [["state_icon", "$agent_tree_row"]]
+# <<< agent-tree sidebar rows <<<
+TOML
+run_deploy "$USER_CONFIG_DIR4" >"$SANDBOX/out5d" 2>"$SANDBOX/err5d" \
+    || { cat "$SANDBOX/err5d" >&2; fail 'deploy refused its own marked legacy row'; }
+grep -qF 'rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]' "$USER_CONFIG4" \
+    || fail 'deploy did not migrate its managed legacy row'
+grep -qF '<<< agent-tree sidebar rows <<<' "$USER_CONFIG4" \
+    || fail 'deploy damaged its managed sidebar markers'
+grep -qF '$agent_tree_row' "$USER_CONFIG4" && fail 'deploy left the old token in its managed block' || true
+pass 'local deploy migrates a marked managed legacy row without treating it as foreign'
 
 # ---------------------------------------------------------------------------
 # 6. A same-user holder that spoofs the plugin environment is still foreign: the values

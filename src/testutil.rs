@@ -10,14 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub fn pi_row(pane_id: &str, path: &str) -> AgentRow {
     AgentRow {
         pane_id: pane_id.to_string(),
-        workspace_id: "ws".to_string(),
-        tab_id: "tab".to_string(),
         agent: "pi".to_string(),
         agent_status: String::new(),
         name: Some(pane_id.to_string()),
         terminal_title_stripped: None,
-        workspace_label: Some("Workspace".to_string()),
-        tab_label: Some("Tab".to_string()),
         cleanup_only: false,
         session_path: Some(path.to_string()),
         tokens: HashMap::new(),
@@ -28,14 +24,10 @@ pub fn pi_row(pane_id: &str, path: &str) -> AgentRow {
 pub fn other_row(pane_id: &str) -> AgentRow {
     AgentRow {
         pane_id: pane_id.to_string(),
-        workspace_id: "ws".to_string(),
-        tab_id: "tab".to_string(),
         agent: "codex".to_string(),
         agent_status: String::new(),
         name: Some(pane_id.to_string()),
         terminal_title_stripped: None,
-        workspace_label: Some("Workspace".to_string()),
-        tab_label: Some("Tab".to_string()),
         cleanup_only: false,
         session_path: None,
         tokens: HashMap::new(),

@@ -1,7 +1,7 @@
 //! Tree-ordering marker: one file in the plugin state dir, beside the subscriber lock.
 //!
 //! The marker's presence means Agent Tree ordering is **off**: the subscriber keeps
-//! publishing `agent_tree_row`/`agent_tree_rank`, but no plugin view is active, so Herdr's
+//! publishing `agent_tree_branch`/`agent_tree_rank`, but no plugin view is active, so Herdr's
 //! native Agents list (grouped or priority, whichever the client already uses) is shown.
 //! The file holds no state beyond its existence — it is not a cache and is never read as
 //! tree or relationship data.

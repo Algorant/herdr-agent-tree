@@ -4,13 +4,13 @@
 The plugin writes no configuration at runtime. The endpoint deploy manages exactly two
 marked fragments and never touches anything else:
 
-  * the sidebar rows block that must reference ``$agent_tree_row`` so the plugin's
-    composed display has a cell to render into, and
+  * the sidebar rows block that references ``$agent_tree_branch`` alongside native
+    workspace/tab cells, and
   * the documented ``prefix+t`` shortcut that invokes ``agent-tree.toggle``.
 
 Both are idempotent. An existing matching fragment is preserved byte-for-byte. A managed
 shortcut fragment is migrated to the canonical ``prefix+t`` key; a foreign
-``[ui.sidebar.agents]`` block that does not reference ``$agent_tree_row`` and a foreign
+``[ui.sidebar.agents]`` block that does not reference ``$agent_tree_branch`` and a foreign
 binding that already occupies the canonical shortcut key are refused before any mutation;
 nothing in this file ever overwrites them.
 """
@@ -26,10 +26,11 @@ SIDEBAR_END = "# <<< agent-tree sidebar rows <<<"
 SHORTCUT_BEGIN = "# >>> agent-tree toggle shortcut >>>"
 SHORTCUT_END = "# <<< agent-tree toggle shortcut <<<"
 SIDEBAR_HEADER = "[ui.sidebar.agents]"
-TOKEN = "$agent_tree_row"
+TOKEN = "$agent_tree_branch"
+LEGACY_TOKEN = "$agent_tree_row"
 DEFAULT_KEY = "prefix+t"
 DEFAULT_COMMAND = "herdr plugin action invoke agent-tree.toggle"
-DEFAULT_ROWS = '[["state_icon", "$agent_tree_row"]]'
+DEFAULT_ROWS = '[["state_icon", "$agent_tree_branch", "workspace", "tab"]]'
 
 # A TOML table header is a bare [name] or [[name]] line; an array element such as
 # ["state_icon", ...] or [{ token = ... }] must never be mistaken for one.
@@ -148,17 +149,23 @@ def inspect(lines: list[str], key: str) -> dict:
     token_present = sidebar is not None and any(
         TOKEN in lines[i] for i in range(sidebar[0], sidebar[1])
     )
+    legacy_token_present = sidebar is not None and any(
+        LEGACY_TOKEN in lines[i] for i in range(sidebar[0], sidebar[1])
+    )
     sidebar_managed, sidebar_damaged = managed_block(lines, SIDEBAR_BEGIN, SIDEBAR_END)
     shortcut_managed, shortcut_damaged = managed_block(lines, SHORTCUT_BEGIN, SHORTCUT_END)
+    foreign_sidebar = sidebar is not None and sidebar_managed is None and not sidebar_damaged
     blocks = key_commands(lines)
     matching = [block for block in blocks if block["key"] == key and "agent-tree.toggle" in block["command"]]
     occupied = [block for block in blocks if block["key"] == key and "agent-tree.toggle" not in block["command"]]
     return {
         "sidebar_section_present": sidebar is not None,
         "sidebar_token_present": token_present,
+        "sidebar_legacy_token_present": legacy_token_present,
         "sidebar_managed_block_present": sidebar_managed is not None,
         "sidebar_managed_block_damaged": sidebar_damaged,
-        "foreign_sidebar_block_without_token": sidebar is not None and not token_present,
+        "foreign_sidebar_block_without_token": foreign_sidebar and not token_present,
+        "foreign_sidebar_block_with_legacy_token": foreign_sidebar and legacy_token_present,
         "shortcut_key": key,
         "shortcut_matching_present": bool(matching),
         "shortcut_managed_block_present": shortcut_managed is not None,
@@ -181,9 +188,15 @@ def ensure(lines: list[str], rows: str, key: str, command: str) -> tuple[list[st
     elif sidebar_damaged:
         raise Refused("a damaged agent-tree sidebar block (need exactly one begin and one end marker, in order)")
     elif sidebar is not None:
+        if any(LEGACY_TOKEN in work[i] for i in range(sidebar[0], sidebar[1])):
+            raise Refused(
+                "a foreign [ui.sidebar.agents] block still references $agent_tree_row; "
+                "manually replace its rows with [['state_icon', '$agent_tree_branch', "
+                "'workspace', 'tab']] (user-owned config is never rewritten)"
+            )
         if not any(TOKEN in work[i] for i in range(sidebar[0], sidebar[1])):
             raise Refused(
-                "a foreign [ui.sidebar.agents] block that does not reference $agent_tree_row"
+                "a foreign [ui.sidebar.agents] block that does not reference $agent_tree_branch"
             )
     else:
         text = append_fragment("".join(work), sidebar_block(key, rows))

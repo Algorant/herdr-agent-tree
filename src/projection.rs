@@ -1,4 +1,4 @@
-//! Projection: one composed display token, the rank token, and the single Agents view.
+//! Projection: the descendant branch token, rank token, and the single Agents view.
 
 use crate::forest::Placement;
 use crate::transport::Model;
@@ -6,8 +6,11 @@ use crate::wire::{request, R};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 
-/// The only two pane keys this plugin ever writes.
-pub const ROW_TOKEN: &str = "agent_tree_row";
+/// The current decoration token: branch/role marker and, for Subagents, a short own name.
+pub const BRANCH_TOKEN: &str = "agent_tree_branch";
+/// Previous composed token, cleared on upgrade but never written again.
+pub const LEGACY_ROW_TOKEN: &str = "agent_tree_row";
+/// Rank is published for ordering only.
 pub const RANK_TOKEN: &str = "agent_tree_rank";
 /// Metadata report source.
 pub const SOURCE: &str = "agent-tree";
@@ -38,8 +41,28 @@ pub fn sort_spec() -> Value {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Desired {
-    pub row: Option<String>,
+    pub branch: Option<String>,
     pub rank: Option<String>,
+}
+
+struct TokenSnapshot {
+    pane_id: String,
+    branch: Option<String>,
+    legacy_row: Option<String>,
+    rank: Option<String>,
+}
+
+fn token_snapshot(model: &Model) -> Vec<TokenSnapshot> {
+    model
+        .ordered_rows()
+        .into_iter()
+        .map(|row| TokenSnapshot {
+            pane_id: row.pane_id.clone(),
+            branch: row.token(BRANCH_TOKEN),
+            legacy_row: row.token(LEGACY_ROW_TOKEN),
+            rank: row.token(RANK_TOKEN),
+        })
+        .collect()
 }
 
 pub fn desired(model: &Model, placements: &[Placement]) -> HashMap<String, Desired> {
@@ -50,33 +73,36 @@ pub fn desired(model: &Model, placements: &[Placement]) -> HashMap<String, Desir
     let mut map = HashMap::new();
     for row in model.ordered_rows() {
         let placement = placements.get(row.pane_id.as_str()).copied();
-        if row.cleanup_only {
-            map.insert(row.pane_id.clone(), Desired::default());
-            continue;
-        }
-        let display = match placement.filter(|placement| placement.depth > 0) {
-            Some(placement) => crate::decoration::descendant(
-                placement.depth,
-                placement.is_last_sibling,
-                &placement.role,
-                child_name(row),
-                placement.task_id.as_deref(),
-                placement.attention,
-            ),
-            _ => ordinary_display(row, placement.and_then(|placement| placement.attention)),
+        let branch = if row.cleanup_only {
+            None
+        } else {
+            placement
+                .filter(|placement| placement.depth > 0)
+                .and_then(|placement| {
+                    crate::decoration::descendant(
+                        placement.depth,
+                        placement.is_last_sibling,
+                        &placement.role,
+                        (placement.role == "subagent")
+                            .then(|| child_name(row))
+                            .flatten(),
+                    )
+                })
         };
         map.insert(
             row.pane_id.clone(),
             Desired {
-                row: Some(display),
-                rank: placement.map(|placement| format!("{:06}", placement.rank)),
+                branch,
+                rank: placement
+                    .filter(|_| !row.cleanup_only)
+                    .map(|placement| format!("{:06}", placement.rank)),
             },
         );
     }
     map
 }
 
-fn child_name(row: &crate::transport::AgentRow) -> &str {
+fn child_name(row: &crate::transport::AgentRow) -> Option<&str> {
     row.name
         .as_deref()
         .or_else(|| {
@@ -85,115 +111,37 @@ fn child_name(row: &crate::transport::AgentRow) -> &str {
                 .map(strip_pi_title_prefix)
         })
         .filter(|name| !name.trim().is_empty())
-        .unwrap_or("(unnamed)")
 }
 
 fn strip_pi_title_prefix(title: &str) -> &str {
     title.strip_prefix("π - ").unwrap_or(title)
 }
 
-fn ordinary_display(row: &crate::transport::AgentRow, attention: Option<char>) -> String {
-    let workspace = row
-        .workspace_label
-        .as_deref()
-        .map(clean_display)
-        .filter(|label| !label.is_empty());
-    let tab = row
-        .tab_label
-        .as_deref()
-        .map(clean_display)
-        .filter(|label| !label.is_empty());
-    let location = match (workspace, tab) {
-        (Some(workspace), Some(tab)) => Some(format!("{workspace} · {tab}")),
-        (Some(workspace), None) => Some(workspace),
-        (None, Some(tab)) => Some(tab),
-        (None, None) => None,
-    };
-    let display = if row.agent == "pi" {
-        location
-            .or_else(|| {
-                row.name
-                    .as_deref()
-                    .map(clean_display)
-                    .filter(|name| !name.is_empty())
-            })
-            .or_else(|| {
-                row.terminal_title_stripped
-                    .as_deref()
-                    .map(strip_pi_title_prefix)
-                    .map(clean_display)
-                    .filter(|title| !title.is_empty())
-            })
-            .unwrap_or_else(|| clean_display(&row.agent))
-    } else {
-        let identity = row
-            .name
-            .as_deref()
-            .map(clean_display)
-            .filter(|name| !name.is_empty())
-            .or_else(|| (!row.agent.is_empty()).then(|| clean_display(&row.agent)));
-        match (identity, location) {
-            (Some(identity), Some(location)) => format!("{identity} · {location}"),
-            (Some(identity), None) => identity,
-            (None, Some(location)) => location,
-            (None, None) => "agent".to_string(),
-        }
-    };
-    let display = match attention {
-        Some(glyph) if display.chars().count() + 2 <= 64 => format!("{display} {glyph}"),
-        Some(glyph) => format!("{} {glyph}", truncate_display(&display, 62)),
-        None => display,
-    };
-    truncate_display(&display, 64)
-}
-
-fn clean_display(value: &str) -> String {
-    value
-        .chars()
-        .filter_map(|ch| {
-            if ch.is_control() {
-                ch.is_whitespace().then_some(' ')
-            } else {
-                Some(ch)
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn truncate_display(value: &str, limit: usize) -> String {
-    value.chars().take(limit).collect()
-}
-
-/// Writes only the differences, one report per pane, both keys together when both change.
-/// Rows that should carry nothing have their plugin-owned keys cleared.
+/// Writes only the differences, clearing the 0.2.0 composed token during migration.
+/// Ranks are unchanged; only validated descendants receive the current branch token.
 pub fn reconcile_tokens(
     socket: &str,
     model: &mut Model,
     desired: &HashMap<String, Desired>,
 ) -> R<usize> {
     let mut writes = 0usize;
-    let snapshot: Vec<(String, Option<String>, Option<String>)> = model
-        .ordered_rows()
-        .into_iter()
-        .map(|row| {
-            (
-                row.pane_id.clone(),
-                row.token(ROW_TOKEN),
-                row.token(RANK_TOKEN),
-            )
-        })
-        .collect();
-    for (pane_id, current_row, current_rank) in snapshot {
+    for TokenSnapshot {
+        pane_id,
+        branch: current_branch,
+        legacy_row: current_legacy,
+        rank: current_rank,
+    } in token_snapshot(model)
+    {
         let want = desired.get(&pane_id).cloned().unwrap_or_default();
-        if current_row == want.row && current_rank == want.rank {
+        if current_branch == want.branch && current_legacy.is_none() && current_rank == want.rank {
             continue;
         }
         let mut tokens = Map::new();
-        if current_row != want.row {
-            tokens.insert(ROW_TOKEN.to_string(), optional(&want.row));
+        if current_branch != want.branch {
+            tokens.insert(BRANCH_TOKEN.to_string(), optional(&want.branch));
+        }
+        if current_legacy.is_some() {
+            tokens.insert(LEGACY_ROW_TOKEN.to_string(), Value::Null);
         }
         if current_rank != want.rank {
             tokens.insert(RANK_TOKEN.to_string(), optional(&want.rank));
@@ -205,7 +153,8 @@ pub fn reconcile_tokens(
         });
         match request(socket, "pane.report_metadata", params) {
             Ok(_) => {
-                model.set_token(&pane_id, ROW_TOKEN, want.row.clone());
+                model.set_token(&pane_id, BRANCH_TOKEN, want.branch.clone());
+                model.set_token(&pane_id, LEGACY_ROW_TOKEN, None);
                 model.set_token(&pane_id, RANK_TOKEN, want.rank.clone());
                 writes += 1;
             }
@@ -215,26 +164,22 @@ pub fn reconcile_tokens(
     Ok(writes)
 }
 
-/// Clears exactly the two plugin-owned keys on every pane that carries them.
+/// Clears the current branch, legacy composed row and rank, preserving all other sources.
 pub fn clear_own_tokens(socket: &str, model: &mut Model) -> usize {
-    let snapshot: Vec<(String, Option<String>, Option<String>)> = model
-        .ordered_rows()
-        .into_iter()
-        .map(|row| {
-            (
-                row.pane_id.clone(),
-                row.token(ROW_TOKEN),
-                row.token(RANK_TOKEN),
-            )
-        })
-        .collect();
     let mut cleared = 0usize;
-    for (pane_id, current_row, current_rank) in snapshot {
-        if current_row.is_none() && current_rank.is_none() {
+    for TokenSnapshot {
+        pane_id,
+        branch: current_branch,
+        legacy_row: current_legacy,
+        rank: current_rank,
+    } in token_snapshot(model)
+    {
+        if current_branch.is_none() && current_legacy.is_none() && current_rank.is_none() {
             continue;
         }
         let mut tokens = Map::new();
-        tokens.insert(ROW_TOKEN.to_string(), Value::Null);
+        tokens.insert(BRANCH_TOKEN.to_string(), Value::Null);
+        tokens.insert(LEGACY_ROW_TOKEN.to_string(), Value::Null);
         tokens.insert(RANK_TOKEN.to_string(), Value::Null);
         let params = json!({
             "pane_id": pane_id,
@@ -243,7 +188,8 @@ pub fn clear_own_tokens(socket: &str, model: &mut Model) -> usize {
         });
         match request(socket, "pane.report_metadata", params) {
             Ok(_) => {
-                model.set_token(&pane_id, ROW_TOKEN, None);
+                model.set_token(&pane_id, BRANCH_TOKEN, None);
+                model.set_token(&pane_id, LEGACY_ROW_TOKEN, None);
                 model.set_token(&pane_id, RANK_TOKEN, None);
                 cleared += 1;
             }
@@ -385,7 +331,6 @@ pub fn probe_view(socket: &str) -> R<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decoration::MAX_WIDTH;
     use crate::transport::Model;
 
     fn model(rows: Vec<crate::transport::AgentRow>) -> Model {
@@ -400,8 +345,6 @@ mod tests {
             depth,
             is_last_sibling: true,
             role: "worker".to_string(),
-            task_id: None,
-            attention: None,
             rank,
         }
     }
@@ -453,89 +396,84 @@ mod tests {
         ]);
         let map = desired(&model, &[placement("linked", 0, 1)]);
         assert_eq!(map["linked"].rank.as_deref(), Some("000001"));
+        assert_eq!(map["linked"].branch, None, "roots carry no marker");
         assert_eq!(map["unlinked"].rank, None);
-        assert_eq!(map["unlinked"].row.as_deref(), Some("Workspace · Tab"));
+        assert_eq!(
+            map["unlinked"].branch, None,
+            "ordinary agents carry no marker"
+        );
     }
 
     #[test]
-    fn root_rows_show_location_and_retain_their_rank() {
+    fn roots_publish_only_the_rank_and_leave_native_workspace_tab_cells_to_herdr() {
         let model = model(vec![crate::testutil::pi_row("root", "/s/root")]);
         let mut map = desired(&model, &[placement("root", 0, 1)]);
         let root = map.remove("root").unwrap();
-        assert_eq!(root.row.as_deref(), Some("Workspace · Tab"));
+        assert_eq!(root.branch, None);
         assert_eq!(root.rank.as_deref(), Some("000001"));
     }
 
     #[test]
-    fn validated_depth_zero_root_attention_is_preserved_after_location() {
-        let model = model(vec![crate::testutil::pi_row("root", "/s/root")]);
-        let mut root = placement("root", 0, 1);
-        root.attention = Some('!');
-        let map = desired(&model, &[root]);
-        assert_eq!(map["root"].row.as_deref(), Some("Workspace · Tab !"));
+    fn worker_decoration_contains_only_the_marker() {
+        let worker = crate::testutil::linked("worker", "/s/worker", "worker", "parent");
+        let mut map = desired(&model(vec![worker]), &[placement("worker", 1, 2)]);
+        assert_eq!(map.remove("worker").unwrap().branch.as_deref(), Some("└─W"));
     }
 
     #[test]
-    fn desired_applies_the_decoration_cap() {
-        let placement = Placement {
-            task_id: Some("task-123456789012345".to_string()),
-            ..placement("worker", 2, 4)
-        };
-        let mut worker = crate::testutil::linked("worker", "/s/worker", "worker", "parent");
-        worker.name = Some("worker-task-3-78712afb".to_string());
-        let model = model(vec![worker]);
-        let mut map = desired(&model, &[placement]);
-        let row = map.remove("worker").unwrap().row.unwrap();
-        assert!(row.chars().count() <= MAX_WIDTH, "{row:?}");
-        assert!(row.starts_with("│  └─W worker-task-3"), "{row:?}");
-    }
-
-    #[test]
-    fn cleanup_only_rows_clear_owned_row_and_rank_instead_of_getting_a_display() {
-        let mut orphan = crate::testutil::with_token(
-            crate::testutil::other_row("released"),
-            ROW_TOKEN,
-            "stale display",
+    fn subagent_decoration_contains_its_short_own_name() {
+        let mut subagent = crate::testutil::linked("sub", "/s/sub", "subagent", "parent");
+        subagent.name = Some("live-sidebar-verification".to_string());
+        let mut map = desired(
+            &model(vec![subagent]),
+            &[Placement {
+                role: "subagent".to_string(),
+                ..placement("sub", 1, 2)
+            }],
         );
-        orphan = crate::testutil::with_token(orphan, RANK_TOKEN, "000007");
+        assert_eq!(
+            map.remove("sub").unwrap().branch.as_deref(),
+            Some("└─S live-sideba…")
+        );
+    }
+
+    #[test]
+    fn cleanup_only_rows_clear_all_plugin_tokens_instead_of_getting_a_display() {
+        let orphan = crate::testutil::with_token(
+            crate::testutil::with_token(
+                crate::testutil::with_token(
+                    crate::testutil::other_row("released"),
+                    LEGACY_ROW_TOKEN,
+                    "stale display",
+                ),
+                BRANCH_TOKEN,
+                "└─S stale",
+            ),
+            RANK_TOKEN,
+            "000007",
+        );
+        let mut orphan = orphan;
         orphan.cleanup_only = true;
-        let model = model(vec![orphan]);
-        let desired = desired(&model, &[]);
-        assert_eq!(desired["released"].row, None);
+        let desired = desired(&model(vec![orphan]), &[]);
+        assert_eq!(desired["released"].branch, None);
         assert_eq!(desired["released"].rank, None);
     }
 
     #[test]
-    fn descendants_use_name_then_exact_title_prefix_fallback_and_keep_non_pi_visible() {
-        let mut worker = crate::testutil::linked("worker", "/s/worker", "worker", "parent");
-        worker.name = None;
-        worker.terminal_title_stripped = Some("π - worker-task-3-78712afb".to_string());
+    fn subagent_name_falls_back_to_title_and_ordinary_agents_get_no_token() {
+        let mut subagent = crate::testutil::linked("sub", "/s/sub", "subagent", "parent");
+        subagent.name = None;
+        subagent.terminal_title_stripped = Some("π - live-sidebar-verify".to_string());
         let codex = crate::testutil::other_row("codex");
-        let model = model(vec![worker, codex]);
-        let map = desired(&model, &[placement("worker", 1, 1)]);
-        assert!(map["worker"]
-            .row
-            .as_deref()
-            .unwrap()
-            .starts_with("└─W worker-task-3"));
-        assert_eq!(map["codex"].row.as_deref(), Some("codex · Workspace · Tab"));
+        let map = desired(
+            &model(vec![subagent, codex]),
+            &[Placement {
+                role: "subagent".to_string(),
+                ..placement("sub", 1, 1)
+            }],
+        );
+        assert_eq!(map["sub"].branch.as_deref(), Some("└─S live-sideba…"));
+        assert_eq!(map["codex"].branch, None);
         assert_eq!(map["codex"].rank, None);
-    }
-
-    #[test]
-    fn ordinary_display_collapses_controls_and_caps_long_labels_and_names() {
-        let mut pi = crate::testutil::pi_row("p", "/s/p");
-        pi.workspace_label = Some("unsafe\nworkspace\u{1b}[31m".to_string());
-        pi.tab_label = Some("main\tthread".to_string());
-        let mut codex = crate::testutil::other_row("c");
-        codex.name = Some("worker-".to_string() + &"x".repeat(100));
-        let model = model(vec![pi, codex]);
-        let map = desired(&model, &[]);
-        let pi_row = map["p"].row.as_deref().unwrap();
-        assert_eq!(pi_row, "unsafe workspace[31m · main thread");
-        assert!(!pi_row.chars().any(char::is_control));
-        let codex_row = map["c"].row.as_deref().unwrap();
-        assert_eq!(codex_row.chars().count(), 64);
-        assert!(!codex_row.chars().any(char::is_control));
     }
 }

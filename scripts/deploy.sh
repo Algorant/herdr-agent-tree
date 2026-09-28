@@ -441,9 +441,8 @@ install)
   stage_root
 
   say "Configuring the Agents sidebar"
-  # One line per agent: status plus the plugin-composed location/tree/identity cell.
-  # The plugin owns the complete row value; do not append native location/title cells.
-  ROWS='[["state_icon", "$agent_tree_row"]]'
+  # One native identity row per agent; the plugin contributes only a validated branch cell.
+  ROWS='[["state_icon", "$agent_tree_branch", "workspace", "tab"]]'
   if grep -qF "$MARK_BEGIN" "$CONFIG" 2>/dev/null; then
     cp -p "$CONFIG" "$CONFIG.agent-tree-backup.$(date +%Y%m%d-%H%M%S)"
     step "backed up $CONFIG"
@@ -465,8 +464,12 @@ PY
   elif grep -q "ui.sidebar.agents" "$CONFIG" 2>/dev/null; then
     step "you already have a [ui.sidebar.agents] block this plugin does not manage; leaving it byte-for-byte untouched"
     step "this user-owned block was left byte-for-byte unchanged; deploy never migrates foreign rows"
-    step "after reviewing the new one-cell display, manually set its row to:"
-    printf '    rows = [["state_icon", "$agent_tree_row"]]\n'
+    if grep -qF '$agent_tree_row' "$CONFIG"; then
+      step "this user-owned block still references the legacy \$agent_tree_row token; replace its row with:"
+    else
+      step "after reviewing the native workspace/tab fallback, manually set its row to:"
+    fi
+    printf '    rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]\n'
     step "then reload the config: $HERDR_BIN server reload-config"
   else
     cp -p "$CONFIG" "$CONFIG.agent-tree-backup.$(date +%Y%m%d-%H%M%S)"
@@ -514,7 +517,7 @@ ranked = []
 for a in agents:
     t = a.get("tokens") or {}
     if t.get("agent_tree_rank"):
-        ranked.append((t["agent_tree_rank"], a.get("workspace_id", ""), t.get("agent_tree_row", "")))
+        ranked.append((t["agent_tree_rank"], a.get("workspace_id", ""), t.get("agent_tree_branch", "")))
 ranked.sort()
 
 if ranked:
