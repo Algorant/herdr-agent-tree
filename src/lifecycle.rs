@@ -1,11 +1,13 @@
 //! Lifecycle: single-instance lock, detached subscriber, shutdown and explicit clear.
 //!
 //! Herdr startup hooks are one-shot commands, so `start`/`apply` acquire a lock and detach
-//! exactly one subscriber per server socket. No supervisor, no reconnect loop, no polling.
+//! exactly one subscriber per server socket. No supervisor, no reconnect loop. The subscriber's
+//! stream timeout doubles as a ~1s snapshot check for agent state transitions (recency).
 
 use crate::forest;
 use crate::mode;
 use crate::projection::{self, ViewState};
+use crate::recency::{self, Activity};
 use crate::transport::{self, Model};
 use crate::wire::{Client, Incoming, R};
 use serde_json::{json, Value};
@@ -13,6 +15,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// Minimum spacing of the timeout-driven snapshot check for agent state transitions.
+const ACTIVITY_POLL: Duration = Duration::from_secs(1);
 
 static TERMINATE: AtomicBool = AtomicBool::new(false);
 
@@ -592,8 +597,18 @@ pub fn run_subscriber() -> R<()> {
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut last_digest = String::new();
+    let mut activity = Activity::default();
+    let mut last_error: Option<String> = None;
     let off = mode::off_path(&dir, &socket);
-    pass(&socket, &off, &mut model, &mut view, &mut last_digest)?;
+    pass(
+        &socket,
+        &off,
+        &mut model,
+        &mut view,
+        &mut last_digest,
+        Some(&mut activity),
+    )?;
+    let mut last_pass = Instant::now();
     events.set_stream_timeout(Duration::from_millis(500))?;
 
     loop {
@@ -602,7 +617,22 @@ pub fn run_subscriber() -> R<()> {
             break;
         }
         match events.read() {
-            Ok(Incoming::Timeout) => continue,
+            // The stream timeout is also the activity clock: state transitions publish no
+            // subscribed event, so an idle stream still takes a snapshot pass every second.
+            Ok(Incoming::Timeout) => {
+                if last_pass.elapsed() >= ACTIVITY_POLL {
+                    let outcome = pass(
+                        &socket,
+                        &off,
+                        &mut model,
+                        &mut view,
+                        &mut last_digest,
+                        Some(&mut activity),
+                    );
+                    last_pass = Instant::now();
+                    log_pass_error(outcome, &mut last_error);
+                }
+            }
             Ok(Incoming::Closed) => {
                 eprintln!(
                     "agent-tree: Herdr closed the subscription; exiting without reconnecting"
@@ -613,9 +643,16 @@ pub fn run_subscriber() -> R<()> {
                 if message.get("event").is_none() {
                     continue;
                 }
-                if let Err(e) = pass(&socket, &off, &mut model, &mut view, &mut last_digest) {
-                    eprintln!("agent-tree: reconcile pass failed: {e}");
-                }
+                let outcome = pass(
+                    &socket,
+                    &off,
+                    &mut model,
+                    &mut view,
+                    &mut last_digest,
+                    Some(&mut activity),
+                );
+                last_pass = Instant::now();
+                log_pass_error(outcome, &mut last_error);
             }
             Err(e) => {
                 eprintln!("agent-tree: {e}; exiting");
@@ -626,6 +663,20 @@ pub fn run_subscriber() -> R<()> {
 
     cleanup(&socket, &mut model);
     Ok(())
+}
+
+/// Logs a failed pass once per distinct message so a persistent fault is not repeated every
+/// second; a successful pass re-arms the log.
+fn log_pass_error(outcome: R<()>, last_error: &mut Option<String>) {
+    match outcome {
+        Ok(()) => *last_error = None,
+        Err(e) => {
+            if last_error.as_deref() != Some(e.as_str()) {
+                eprintln!("agent-tree: reconcile pass failed: {e}");
+            }
+            *last_error = Some(e);
+        }
+    }
 }
 
 /// Removes only the plugin's own tokens and its own view, then reports what it did.
@@ -643,12 +694,17 @@ fn cleanup(socket: &str, model: &mut Model) {
 /// view: with it set, the native Agents list is left in charge; with it clear, this
 /// plugin's `tree` projection is installed. The marker is re-checked after publication so a
 /// toggle-off landing mid-pass still leaves the native list in charge.
+///
+/// `activity` is `Some` only for the subscriber, the sole writer of recency ranks. A one-shot
+/// pass (`None`) never stamps or rewrites an existing rank, so its snapshot cannot overwrite a
+/// newer stamp; the subscriber publishes any missing rank on its next pass.
 fn pass(
     socket: &str,
     off: &Path,
     model: &mut Model,
     view: &mut ViewState,
     last_digest: &mut String,
+    activity: Option<&mut Activity>,
 ) -> R<()> {
     let rows = transport::fetch_rows(socket)?;
     model.install(rows);
@@ -663,25 +719,14 @@ fn pass(
             return Err(identity_error);
         }
     };
-    let digest = model.digest();
-    if digest == *last_digest {
+    let Some((ranked, writes)) = publish(model, socket, &endpoint_prefix, last_digest, activity)?
+    else {
         return Ok(());
-    }
-    let placements = forest::build(&model.order, &model.rows);
-    if !projection::within_rank_ceiling(placements.len()) {
-        eprintln!(
-            "agent-tree: {} rankable rows exceeds the fixed-width rank space; publishing nothing",
-            placements.len()
-        );
-        *last_digest = digest;
-        return Ok(());
-    }
-    let desired = projection::desired(model, &placements, &endpoint_prefix);
-    let writes = projection::reconcile_tokens(socket, model, &desired)?;
+    };
     apply_view_state(socket, off, view)?;
     eprintln!(
         "agent-tree: {} ranked rows, {} panes written, view owned={} passive={}",
-        placements.len(),
+        ranked,
         writes,
         view.owned(),
         view.passive()
@@ -689,6 +734,51 @@ fn pass(
     *last_digest = model.digest();
     apply_view_state(socket, off, view)?;
     Ok(())
+}
+
+/// Decides and writes the tokens for the fetched `model`; returns `(ranked rows, writes)`, or
+/// `None` when nothing needed publishing.
+///
+/// The sequence memory is staged: it is committed to `activity` only once every desired
+/// write succeeded. A failed publication therefore leaves the same transition detectable, and
+/// `last_digest` (set by the caller after success) still differs, so the next pass retries.
+fn publish(
+    model: &mut Model,
+    socket: &str,
+    endpoint_prefix: &str,
+    last_digest: &mut String,
+    activity: Option<&mut Activity>,
+) -> R<Option<(usize, usize)>> {
+    let mut staged = activity.as_deref().cloned();
+    let active = staged
+        .as_mut()
+        .map(|staged| staged.observe(model))
+        .transpose()?;
+    let digest = model.digest();
+    let mut published = None;
+    if digest != *last_digest {
+        let placements = forest::build(&model.order, &model.rows);
+        if projection::within_rank_ceiling(placements.len()) {
+            let stamps = active
+                .map(|active| {
+                    recency::family_stamps(model, &placements, &active, recency::inverted_now()?)
+                })
+                .transpose()?;
+            let desired = projection::desired(model, &placements, endpoint_prefix, stamps.as_ref());
+            let writes = projection::reconcile_tokens(socket, model, &desired)?;
+            published = Some((placements.len(), writes));
+        } else {
+            eprintln!(
+                "agent-tree: {} rankable rows exceeds the fixed-width rank space; publishing nothing",
+                placements.len()
+            );
+            *last_digest = digest;
+        }
+    }
+    if let (Some(activity), Some(staged)) = (activity, staged) {
+        *activity = staged;
+    }
+    Ok(published)
 }
 
 /// Installs the tree view or confirms it is off, according to the marker. Tokens are never
@@ -724,7 +814,7 @@ pub fn apply() -> R<()> {
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut digest = String::new();
-    pass(&socket, &off, &mut model, &mut view, &mut digest)
+    pass(&socket, &off, &mut model, &mut view, &mut digest, None)
 }
 
 /// Deploy-grade entrypoint: guarantee the sole subscriber runs this build, then re-apply.
@@ -743,7 +833,7 @@ pub fn reload() -> R<()> {
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut digest = String::new();
-    pass(&socket, &off, &mut model, &mut view, &mut digest)
+    pass(&socket, &off, &mut model, &mut view, &mut digest, None)
 }
 
 /// Explicit `clear` action: removes only the plugin's own tokens and its own view.
@@ -825,7 +915,7 @@ pub fn toggle() -> R<()> {
     let mut model = Model::default();
     let mut view = ViewState::default();
     let mut digest = String::new();
-    pass(&socket, &off, &mut model, &mut view, &mut digest)?;
+    pass(&socket, &off, &mut model, &mut view, &mut digest, None)?;
     eprintln!(
         "agent-tree: tree ordering {}",
         if enable { "on" } else { "off" }
@@ -846,7 +936,138 @@ fn clear_projection(socket: &str) -> R<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::TempDir;
+    use crate::testutil::{self, TempDir};
+    use std::collections::HashMap;
+    use std::io::{BufRead, BufReader};
+    use std::os::unix::net::UnixListener;
+    use std::sync::{Arc, Mutex};
+
+    /// A Herdr stand-in that accepts `pane.report_metadata`, records the last rank written per
+    /// pane, and refuses writes for one pane while `refuse` is set.
+    #[derive(Default)]
+    struct FakeHerdr {
+        refuse: Option<String>,
+        ranks: HashMap<String, String>,
+    }
+
+    fn fake_herdr(dir: &TempDir) -> (String, Arc<Mutex<FakeHerdr>>) {
+        let socket = dir.path().join("herdr.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let state = Arc::new(Mutex::new(FakeHerdr::default()));
+        let shared = Arc::clone(&state);
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut line = String::new();
+                BufReader::new(&stream).read_line(&mut line).unwrap();
+                let request: Value = serde_json::from_str(&line).unwrap();
+                let pane = request["params"]["pane_id"].as_str().unwrap().to_string();
+                let mut fake = shared.lock().unwrap();
+                let reply = if fake.refuse.as_deref() == Some(pane.as_str()) {
+                    json!({"id": request["id"], "error": {"code": "refused", "message": "no"}})
+                } else {
+                    if let Some(rank) = request["params"]["tokens"][projection::RANK_TOKEN].as_str()
+                    {
+                        fake.ranks.insert(pane, rank.to_string());
+                    }
+                    json!({"id": request["id"], "result": {}})
+                };
+                let _ = (&stream).write_all(format!("{reply}\n").as_bytes());
+            }
+        });
+        (socket.to_str().unwrap().to_string(), state)
+    }
+
+    #[test]
+    fn a_failed_publication_retries_the_same_transition_until_ranks_are_contiguous() {
+        const PREFIX: &str = "h0123456789abcdef";
+        let dir = TempDir::new("retry");
+        let (socket, fake) = fake_herdr(&dir);
+        let root_path = "/sessions/root.jsonl";
+        let mut model = Model::default();
+        model.install(vec![
+            testutil::pi_row("root", root_path),
+            testutil::linked(
+                "child",
+                "/sessions/child.jsonl",
+                "worker",
+                &crate::identity::self_hash(root_path),
+            ),
+            testutil::other_row("other"),
+        ]);
+        let mut activity = Activity::default();
+        let mut digest = String::new();
+        publish(
+            &mut model,
+            &socket,
+            PREFIX,
+            &mut digest,
+            Some(&mut activity),
+        )
+        .unwrap()
+        .expect("the baseline publishes neutral ranks");
+        digest = model.digest();
+
+        // The child has a real transition, but its rank write is refused: root's write lands.
+        model.rows.get_mut("child").unwrap().state_change_seq = Some(2);
+        fake.lock().unwrap().refuse = Some("child".to_string());
+        let error = publish(
+            &mut model,
+            &socket,
+            PREFIX,
+            &mut digest,
+            Some(&mut activity),
+        )
+        .unwrap_err();
+        assert!(error.contains("child"), "{error}");
+        assert_ne!(
+            digest,
+            model.digest(),
+            "a failure must not settle the digest"
+        );
+
+        // The next pass sees the same transition again and completes the family.
+        fake.lock().unwrap().refuse = None;
+        let (ranked, writes) = publish(
+            &mut model,
+            &socket,
+            PREFIX,
+            &mut digest,
+            Some(&mut activity),
+        )
+        .unwrap()
+        .expect("the retry publishes");
+        assert_eq!((ranked, writes), (3, 2));
+        let ranks = fake.lock().unwrap().ranks.clone();
+        let (root, child) = (&ranks["root"], &ranks["child"]);
+        assert_eq!(root.split('-').next(), child.split('-').next());
+        assert!(
+            root.split('-').next().unwrap() < "9999999999999",
+            "{root} was promoted"
+        );
+        assert!(
+            root.ends_with("-000001") && child.ends_with("-000002"),
+            "{root} {child}"
+        );
+        assert!(
+            root < &ranks["other"] && child < &ranks["other"],
+            "{ranks:?}"
+        );
+
+        // The transition was consumed by the success: another pass stamps nothing.
+        digest = model.digest();
+        model.rows.get_mut("other").unwrap().agent_status = "idle".to_string();
+        model.rows.get_mut("other").unwrap().name = Some("renamed".to_string());
+        let (_, writes) = publish(
+            &mut model,
+            &socket,
+            PREFIX,
+            &mut digest,
+            Some(&mut activity),
+        )
+        .unwrap()
+        .expect("display change recomputes");
+        assert_eq!(writes, 0);
+    }
 
     #[test]
     fn a_native_pass_still_reaches_the_socket_and_owns_no_view() {
@@ -865,6 +1086,7 @@ mod tests {
             &mut model,
             &mut view,
             &mut digest,
+            None,
         );
         assert!(
             outcome.is_err(),

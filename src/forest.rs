@@ -15,9 +15,18 @@ pub struct Placement {
     pub is_last_sibling: bool,
     pub role: String,
     pub rank: u32,
+    /// The outermost validated ancestor (itself for a singleton). Recency is family-wide.
+    pub family_root: String,
 }
 
+/// Places every agent row. A row without a validated parent edge is a family root, so a lone
+/// agent (Pi or not) is a singleton family; only validated Pi delegation nests.
 pub fn build(order: &[String], rows: &HashMap<String, AgentRow>) -> Vec<Placement> {
+    let agent_rows: Vec<&AgentRow> = order
+        .iter()
+        .filter_map(|id| rows.get(id))
+        .filter(|row| !row.cleanup_only)
+        .collect();
     let pi_rows: Vec<&AgentRow> = order
         .iter()
         .filter_map(|id| rows.get(id))
@@ -94,20 +103,22 @@ pub fn build(order: &[String], rows: &HashMap<String, AgentRow>) -> Vec<Placemen
         list.sort_by_key(|id| native_index.get(id.as_str()).copied().unwrap_or(usize::MAX));
     }
 
-    // Parent-valid roots are the only entry points; a node whose parent chain never reaches
-    // one (a cycle, or a chain into an unplaceable node) is never emitted.
-    let roots: Vec<String> = pi_rows
+    // Every row without a parent edge is a root. A node whose parent chain never reaches one
+    // (a cycle, or a chain into an unplaceable node) never validates a parent: it is emitted
+    // below as an unnested singleton instead of being dropped.
+    let roots: Vec<String> = agent_rows
         .iter()
         .map(|row| row.pane_id.clone())
-        .filter(|id| children.contains_key(id) && !parent.contains_key(id))
+        .filter(|id| !parent.contains_key(id))
         .collect();
 
     let mut placements = Vec::new();
     let mut visited: HashSet<String> = HashSet::new();
     let mut rank = 1u32;
-    for root in roots {
+    for root in &roots {
         emit(
-            &root,
+            root,
+            root,
             0,
             true,
             &children,
@@ -117,12 +128,26 @@ pub fn build(order: &[String], rows: &HashMap<String, AgentRow>) -> Vec<Placemen
             &mut rank,
         );
     }
+    for row in &agent_rows {
+        if visited.insert(row.pane_id.clone()) {
+            placements.push(Placement {
+                pane_id: row.pane_id.clone(),
+                depth: 0,
+                is_last_sibling: true,
+                role: String::new(),
+                rank,
+                family_root: row.pane_id.clone(),
+            });
+            rank += 1;
+        }
+    }
     placements
 }
 
 #[allow(clippy::too_many_arguments)]
 fn emit(
     pane_id: &str,
+    family_root: &str,
     depth: usize,
     is_last_sibling: bool,
     children: &HashMap<String, Vec<String>>,
@@ -141,6 +166,7 @@ fn emit(
         is_last_sibling,
         role: relationship.map(|r| r.role.clone()).unwrap_or_default(),
         rank: *rank,
+        family_root: family_root.to_string(),
     });
     *rank += 1;
     if let Some(kids) = children.get(pane_id) {
@@ -148,6 +174,7 @@ fn emit(
         for (index, kid) in kids.iter().enumerate() {
             emit(
                 kid,
+                family_root,
                 depth + 1,
                 index + 1 == last,
                 children,
@@ -186,10 +213,21 @@ mod tests {
             .collect()
     }
 
+    /// True when the pane shares a family with another pane (as parent or child).
     fn is_linked(placements: &[Placement], pane_id: &str) -> bool {
+        let family = |id: &str| {
+            placements
+                .iter()
+                .find(|p| p.pane_id == id)
+                .map(|p| p.family_root.clone())
+        };
+        let Some(own) = family(pane_id) else {
+            return false;
+        };
         placements
             .iter()
-            .any(|placement| placement.pane_id == pane_id)
+            .filter(|p| p.pane_id != pane_id)
+            .any(|p| p.family_root == own)
     }
 
     fn path(name: &str) -> String {
@@ -231,22 +269,30 @@ mod tests {
 
         assert_eq!(
             ids(&placements),
-            ["root-a", "worker-2", "worker-1", "sub-a", "root-b", "sub-b"]
+            ["root-a", "worker-2", "worker-1", "sub-a", "root-b", "sub-b", "lone"]
         );
         assert_eq!(
             placements.iter().map(|p| p.depth).collect::<Vec<_>>(),
-            [0, 1, 1, 2, 0, 1]
+            [0, 1, 1, 2, 0, 1, 0]
         );
         assert_eq!(
             placements.iter().map(|p| p.rank).collect::<Vec<_>>(),
-            [1, 2, 3, 4, 5, 6]
+            [1, 2, 3, 4, 5, 6, 7]
+        );
+        // The nested Subagent stays under its Worker, and the whole family folds to its root.
+        assert_eq!(
+            placements
+                .iter()
+                .map(|p| p.family_root.as_str())
+                .collect::<Vec<_>>(),
+            ["root-a", "root-a", "root-a", "root-a", "root-b", "root-b", "lone"]
         );
         assert_eq!(
             placements
                 .iter()
                 .map(|p| p.is_last_sibling)
                 .collect::<Vec<_>>(),
-            [true, false, true, true, true, true]
+            [true, false, true, true, true, true, true]
         );
         assert!(!is_linked(&placements, "lone"));
     }
@@ -336,10 +382,11 @@ mod tests {
             ),
         ]);
         assert!(
-            duplicates.is_empty(),
+            duplicates.iter().all(|p| p.depth == 0),
             "duplicate agency_self must unlink every carrier, got {:?}",
             ids(&duplicates)
         );
+        assert_eq!(duplicates.len(), 3, "unlinked carriers stay visible");
     }
 
     #[test]
@@ -422,8 +469,8 @@ mod tests {
             &identity::self_hash(&path("a")),
         );
         assert!(
-            placements(vec![self_linked.clone()]).is_empty(),
-            "a self-linked node with no children is unlinked"
+            !is_linked(&placements(vec![self_linked.clone()]), "a"),
+            "a self-linked node with no children is a singleton"
         );
         let with_child = placements(vec![
             self_linked,
@@ -455,15 +502,17 @@ mod tests {
     }
 
     #[test]
-    fn cycles_never_rank_and_never_validate_a_parent() {
+    fn cycles_are_unnested_singletons_and_never_validate_a_parent() {
         let placements = placements(vec![
             testutil::linked("a", &path("a"), "worker", &identity::self_hash(&path("b"))),
             testutil::linked("b", &path("b"), "worker", &identity::self_hash(&path("a"))),
         ]);
+        assert_eq!(ids(&placements), ["a", "b"], "cycle members stay visible");
         assert!(
-            placements.is_empty(),
-            "cycle members must not be emitted, got {:?}",
-            ids(&placements)
+            placements
+                .iter()
+                .all(|p| p.depth == 0 && p.family_root == p.pane_id),
+            "cycle members are unnested singletons, got {placements:?}"
         );
     }
 
@@ -496,11 +545,21 @@ mod tests {
     }
 
     #[test]
-    fn non_pi_rows_are_never_placement_candidates() {
+    fn every_agent_is_a_singleton_family_root_including_non_pi() {
         let placements = placements(vec![
             testutil::other_row("codex"),
             testutil::pi_row("plain", &path("plain")),
         ]);
-        assert!(placements.is_empty());
+        assert_eq!(ids(&placements), ["codex", "plain"]);
+        assert!(placements
+            .iter()
+            .all(|p| p.depth == 0 && p.family_root == p.pane_id));
+    }
+
+    #[test]
+    fn cleanup_only_rows_are_not_placed() {
+        let mut released = testutil::other_row("released");
+        released.cleanup_only = true;
+        assert!(placements(vec![released]).is_empty());
     }
 }

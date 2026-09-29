@@ -255,7 +255,7 @@ make_pi() { # <name>
 }
 
 # Undelegating sessions and the non-Pi row are created FIRST so native order puts them
-# above the family; the projection must move the ranked tree to the top of the sidebar.
+# above the family. Every agent is a ranked family root; validated children nest under theirs.
 make_pi lone-1; P_L1=$GP_PANE; S_L1=$GP_SESSION
 verify_credentials_free "$P_L1"
 step "lone-1  (${SECONDS-t0}s)"
@@ -369,26 +369,27 @@ finish_event_watch() {
     step "observed Herdr event: $(jq -r '.event' "$TMP/event.json")"
 }
 
-wait_ranked() { # <count> -> 0 if reached within ~20s
-    local want="$1" got=""
+RANK_RE='^[0-9]{13}-h[0-9a-f]{16}-[0-9]{6}$'
+wait_ranked() { # -> 0 once every listed agent carries a current-format rank (~20s)
+    local got=""
     for _ in $(seq 1 40); do
-        got=$(herdr agent list | jq '[.result.agents[] | select(.tokens.agent_tree_rank != null)] | length')
-        [ "$got" = "$want" ] && return 0
+        got=$(herdr agent list | jq --arg re "$RANK_RE" '[.result.agents[] | select((.tokens.agent_tree_rank // "") | test($re) | not)] | length')
+        [ "$got" = 0 ] && return 0
         sleep 0.5
     done
     return 1
 }
 
-wait_ranked 4 || fail "expected root, Worker and two direct Subagents to be ranked"
+wait_ranked || fail "expected every agent (families and singletons) to be ranked"
 
-log "Verifying stale numeric rank migration"
-herdr pane report-metadata "$P_R1" --source agent-tree --token 'agent_tree_rank=000001' >/dev/null
+log "Verifying v0.3.0 rank migration"
+herdr pane report-metadata "$P_R1" --source agent-tree --token 'agent_tree_rank=h0000000000000000-000001' >/dev/null
 for _ in $(seq 1 40); do
-    [[ "$(rank_of "$P_R1")" =~ ^h[0-9a-f]{16}-000001$ ]] && break
+    [[ "$(rank_of "$P_R1")" =~ $RANK_RE ]] && break
     sleep 0.25
 done
-[[ "$(rank_of "$P_R1")" =~ ^h[0-9a-f]{16}-000001$ ]] || fail "stale numeric rank was not migrated: $(rank_of "$P_R1")"
-step "stale numeric rank migrated to endpoint-qualified format"
+[[ "$(rank_of "$P_R1")" =~ $RANK_RE ]] || fail "v0.3.0 rank was not migrated: $(rank_of "$P_R1")"
+step "v0.3.0 rank migrated to the recency-leading format"
 
 log "Verifying upgrade clears a stale 0.2.0 composed-row token"
 herdr pane report-metadata "$P_L1" --source agent-tree \
@@ -400,27 +401,29 @@ for _ in $(seq 1 40); do
     sleep 0.25
 done
 [ "$stale_cleared" = 1 ] || fail "the 0.2.0 agent_tree_row survived migration: $tokens"
-printf '%s' "$tokens" | jq -e 'has("agent_tree_branch") or has("agent_tree_rank")' >/dev/null \
-    && fail "the ordinary stale-token fixture gained current plugin tokens: $tokens"
+printf '%s' "$tokens" | jq -e 'has("agent_tree_branch")' >/dev/null \
+    && fail "the ordinary stale-token fixture gained a branch marker: $tokens"
 step "stale 0.2.0 row cleared; other metadata preserved: $tokens"
 
 log "Verifying real identity validation"
-expect_rank() { # <pane> <expected> <label>
-    local got; got=$(rank_of "$1")
-    [[ "$got" == *"$2" ]] || fail "$3: expected rank suffix $2, got $got"
-    [[ "$got" =~ ^h[0-9a-f]{16}-[0-9]{6}$ ]] || fail "$3: invalid endpoint rank format: $got"
-    step "$3 rank $got"
+rank_field() { # <pane> <1|2|3> -> stamp, endpoint or preorder
+    rank_of "$1" | cut -d- -f"$2"
 }
-expect_rank "$P_R1" "-000001" "root-alpha"
+[[ "$(rank_of "$P_R1")" =~ $RANK_RE ]] || fail "root-alpha: invalid rank format: $(rank_of "$P_R1")"
+step "root-alpha rank $(rank_of "$P_R1")"
+root_stamp=$(rank_field "$P_R1" 1)
+root_order=$((10#$(rank_field "$P_R1" 3)))
+child_orders=""
 for pane in "$P_W1" "$P_S1" "$P_S2"; do
-    [ "$(rank_of "$pane")" != "-" ] || fail "validated direct child $pane was not ranked"
+    [[ "$(rank_of "$pane")" =~ $RANK_RE ]] || fail "validated direct child $pane was not ranked"
+    [ "$(rank_field "$pane" 1)" = "$root_stamp" ] || fail "child $pane does not share its family's recency prefix"
+    child_orders="$child_orders $((10#$(rank_field "$pane" 3)))"
 done
-[ "$(rank_of "$P_R2")" = "-" ] || fail "root-beta without children must remain unranked"
-child_ranks=$(printf '%s\n' "$(rank_of "$P_W1")" "$(rank_of "$P_S1")" "$(rank_of "$P_S2")" | sort | paste -sd, -)
-[ "$(printf '%s\n' "$(rank_of "$P_W1")" "$(rank_of "$P_S1")" "$(rank_of "$P_S2")" | sed -E 's/^.*-([0-9]{6})$/\1/' | sort | paste -sd, -)" = "000002,000003,000004" ] || fail "direct-child ranks are not a complete preorder tail: $child_ranks"
+child_orders=$(printf '%s\n' $child_orders | sort -n | paste -sd, -)
+[ "$child_orders" = "$((root_order + 1)),$((root_order + 2)),$((root_order + 3))" ] || fail "direct-child ranks are not a complete preorder tail after the root: $child_orders"
 for pair in "$P_L1=lone-1" "$P_L2=lone-2" "$P_X1=codex-1" "$P_R2=root-beta"; do
     local_pane=${pair%%=*}; local_name=${pair##*=}
-    [ "$(rank_of "$local_pane")" = "-" ] || fail "$local_name must stay unranked"
+    [[ "$(rank_of "$local_pane")" =~ $RANK_RE ]] || fail "$local_name must be a ranked singleton family"
     row=$(row_of "$local_pane")
     [ "$row" = "-" ] || fail "$local_name must remain unmarked: $row"
 done
@@ -445,17 +448,17 @@ herdr pane report-metadata "$P_S1" --source pi-fixture \
     --token "agency_self=$(printf '0%.0s' {1..64})" >/dev/null
 dropped=0
 for _ in $(seq 1 30); do
-    [ "$(rank_of "$P_S1")" = "-" ] && { dropped=1; break; }
+    [ "$(row_of "$P_S1")" = "-" ] && { dropped=1; break; }
     sleep 0.5
 done
 [ "$dropped" = 1 ] || fail "a forged agency_self was not rejected"
 invalid_sub_row=$(row_of "$P_S1")
 [ "$invalid_sub_row" = "-" ] || fail "invalid relationship retained a fabricated branch: $invalid_sub_row"
-step "Forged agency_self dropped the Subagent rank and branch, leaving native location cells"
+step "Forged agency_self dropped the Subagent branch, leaving native location cells"
 report_rel "$P_S1" subagent "$H_S1" "$H_R1" "question=1"
-wait_ranked 4 || fail "restoring the true agency_self did not restore the tree"
-[ "$(rank_of "$P_S1")" != "-" ] || fail "Subagent rank did not return after restore"
-step "True agency_self restored the Subagent rank"
+wait_ranked || fail "restoring the true agency_self left an agent unranked"
+wait_row_contains "$P_S1" "S"
+step "True agency_self restored the Subagent branch"
 
 # ---------------------------------------------------------------------------
 # 6. Render the one-cell sidebar at pinned widths and at the local default settings.
@@ -562,7 +565,7 @@ if line is None or "lone-1" not in line or "obsolete-composed-location" in line:
 print("legacy-only pane: " + line[:line.find("│") + 1])
 PY
 herdr plugin action invoke agent-tree.apply >/dev/null
-wait_ranked 4 || fail "re-applying after the renderer check did not restore the ranked tree"
+wait_ranked || fail "re-applying after the renderer check did not restore the ranked tree"
 [ "$(row_of "$P_L1")" = "-" ] || fail "plugin did not clear legacy row after renderer check: $(row_of "$P_L1")"
 TMUX_SOCKET="$TMP/tmux.sock"
 for width in 26 32 36; do

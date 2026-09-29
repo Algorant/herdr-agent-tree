@@ -325,11 +325,12 @@ token_of() { # <pane> <token> -> value or "-"
     herdr agent list | jq -r --arg p "$1" --arg t "$2" \
         '.result.agents[] | select(.pane_id==$p) | .tokens[$t] // "-"' | head -1
 }
-wait_ranked() { # <count>
-    local want="$1" got=""
+RANK_RE='^[0-9]{13}-h[0-9a-f]{16}-[0-9]{6}$'
+wait_ranked() { # -> 0 once every listed agent carries a current-format rank (~20s)
+    local got=""
     for _ in $(seq 1 40); do
-        got=$(herdr agent list | jq '[.result.agents[] | select(.tokens.agent_tree_rank != null)] | length')
-        [ "$got" = "$want" ] && return 0
+        got=$(herdr agent list | jq --arg re "$RANK_RE" '[.result.agents[] | select((.tokens.agent_tree_rank // "") | test($re) | not)] | length')
+        [ "$got" = 0 ] && return 0
         sleep 0.5
     done
     return 1
@@ -359,8 +360,13 @@ config_has_sort() {
 }
 
 assert_decorations_retained() { # <label>
-    [[ "$(token_of "$P_R1" agent_tree_rank)" =~ ^h[0-9a-f]{16}-000001$ ]] || fail "$1: root-alpha rank lost while tree was off"
-    [[ "$(token_of "$P_S1" agent_tree_rank)" =~ ^h[0-9a-f]{16}-000002$ ]] || fail "$1: sub-alpha rank lost while tree was off"
+    local root_rank sub_rank
+    root_rank=$(token_of "$P_R1" agent_tree_rank)
+    sub_rank=$(token_of "$P_S1" agent_tree_rank)
+    [[ "$root_rank" =~ $RANK_RE ]] || fail "$1: root-alpha rank lost while tree was off"
+    [[ "$sub_rank" =~ $RANK_RE ]] || fail "$1: sub-alpha rank lost while tree was off"
+    [ "${root_rank%%-*}" = "${sub_rank%%-*}" ] || fail "$1: family members do not share a recency prefix"
+    [ "$((10#${sub_rank##*-}))" = "$((10#${root_rank##*-} + 1))" ] || fail "$1: sub-alpha does not follow root-alpha in preorder"
     [ "$(token_of "$P_R1" agent_tree_branch)" = "-" ] || fail "$1: root unexpectedly has a branch marker"
     [ "$(token_of "$P_S1" agent_tree_branch)" = "└─S sub-alpha" ] || fail "$1: Subagent branch/name changed: $(token_of "$P_S1" agent_tree_branch)"
     [ "$(token_of "$P_R1" agent_tree_row)" = "-" ] || fail "$1: legacy composed token was republished"
@@ -373,7 +379,7 @@ assert_decorations_retained() { # <label>
 log "Applying the tree projection and waiting for the validated ranks"
 herdr pane report-metadata "$P_L1" --source toggle-fixture --token "fixture_keep=kept" >/dev/null
 herdr plugin action invoke agent-tree.apply >/dev/null
-wait_ranked 2 || fail "the plugin did not rank the validated family"
+wait_ranked || fail "the plugin did not rank every agent"
 
 log "Rendering the sidebar through a real tmux PTY"
 TMUX_SOCKET="$TMP/tmux.sock"
@@ -382,9 +388,13 @@ tmux -S "$TMUX_SOCKET" new-session -d -x 150 -y 50 -s "$SESSION" "$HERDR_BIN"
 sleep 6
 dismiss_overlays
 wait_header tree
-[ "$(order_after_header)" = "root-alpha,sub-alpha,lone-1" ] \
-    || fail "tree order was '$(order_after_header)', expected root-alpha,sub-alpha,lone-1 (ranked tree first, unranked lone last)"
-step "tree view: header tree, order $(order_after_header)"
+# Recency decides which family is first; the family itself is always parent-first and contiguous.
+TREE_ORDER=$(order_after_header)
+case "$TREE_ORDER" in
+    root-alpha,sub-alpha,lone-1|lone-1,root-alpha,sub-alpha) ;;
+    *) fail "tree order was '$TREE_ORDER', expected the root-alpha,sub-alpha family contiguous and parent-first" ;;
+esac
+step "tree view: header tree, order $TREE_ORDER"
 
 log "Shortcut: tree -> native"
 press_toggle
@@ -399,7 +409,7 @@ assert_decorations_retained "tree off"
 log "Shortcut: native -> tree"
 press_toggle
 wait_header tree
-[ "$(order_after_header)" = "root-alpha,sub-alpha,lone-1" ] || fail "tree did not return after the second shortcut press"
+[ "$(order_after_header)" = "$TREE_ORDER" ] || fail "tree did not return after the second shortcut press"
 assert_decorations_retained "tree on again"
 
 log "Shortcut: tree -> native again"

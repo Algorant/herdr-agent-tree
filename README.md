@@ -22,13 +22,14 @@ the shortcut (see "End-to-end test").
   - `agent_tree_branch` — only validated descendant markers: Workers show branch/role;
     Subagents show branch/role and their own name, capped at 12 terminal display columns.
     Roots and ordinary agents receive no branch token.
-  - `agent_tree_rank` — a fixed-width 6-digit preorder rank, used only for sorting.
+  - `agent_tree_rank` — `<13-digit inverted time>-<endpoint>-<6-digit preorder>`, used only for
+    sorting (see "Recency ordering").
 - The former `agent_tree_row` token is never written by current code. Upgrades and cleanup
   clear that legacy composed token as well as the current branch and rank, preserving other
   metadata sources.
 - One `agent.view.set` projection (`source = plugin:agent-tree`, label `tree`) sorts by rank
-  and then by native order, so unranked rows stay in native relative order after the ranked
-  block.
+  and then by native order. Every recognized agent (Pi or not) is a family root or singleton and is
+  ranked; validated delegation nests under its root.
 - Identity is recomputed, never inferred: `agency_self` must equal
   `sha256(["pi","path",<agent_session.value>])`, a parent edge must resolve to exactly one
   pane, and a pane that is only a parent is validated through a validated child's
@@ -394,6 +395,28 @@ routing: every line above targets the endpoint named on the command line; a mach
 `--json` emits a stable document (`{"endpoints": [...], "split_state": bool}`) for scripting.
 The doctor never writes, signals a process, or reloads a server.
 
+## Recency ordering
+
+The family whose agent most recently changed state is listed first, across machines.
+
+- Every top-level agent is a family; a Worker's Subagent stays nested under the Worker. A real
+  rise of Herdr's `state_change_seq` in any member moves the whole outermost family above older
+  ones. Output, focus, renames and this plugin's own metadata writes do not move it.
+- The subscriber compares `state_change_seq` on its existing 500ms stream timeout, at most once a
+  second (no per-pane subscriptions), keeping only an in-memory terminal -> sequence map. The first
+  snapshot is a neutral baseline; an agent first seen after it counts as activity.
+- The stamp is the local wall clock, published as the rank's inverted-time prefix shared by the
+  whole family. The published prefixes are the only record: they are read back each pass and a
+  family's recency is its newest member's. Only the exact v0.3.0 rank `h<16 hex>-<6 digits>` is
+  read as neutral; any other malformed rank names its pane in an error and publishes nothing
+  (`agent-tree.clear` recovers).
+- The subscriber is the only writer of recency. `apply`, `reload` and `toggle` never stamp or
+  rewrite an existing rank; a rank still missing is published by the subscriber within about a second.
+- A clean stop or Herdr restart returns to the neutral baseline; order resumes at the next real
+  transition.
+- **Clock skew:** each machine stamps its own transitions, so two near-simultaneous transitions on
+  machines with unsynchronized clocks can be ordered by the skew between them.
+
 ## Toggle Agent Tree ordering
 
 Agent Tree exposes one owner-safe toggle. `agent-tree.toggle` turns the plugin's ordering on
@@ -403,8 +426,8 @@ when no plugin view is active, and off when this plugin owns the view:
 herdr plugin action invoke agent-tree.toggle
 ```
 
-- **No active plugin view -> tree.** The subscriber is ensured, the validated delegation
-  projection is installed with label `tree`, and the sidebar shows the nested forest.
+- **No active plugin view -> tree.** The subscriber is ensured, the recency-ordered
+  forest projection is installed with label `tree`, and the sidebar shows the nested forest.
 - **This plugin owns the view -> native.** Only this plugin's view is cleared; Herdr's
   existing native Agents list returns in whichever grouped/priority order the client already
   uses. The plugin never writes `ui.agent_panel_sort` and never creates or consumes
@@ -631,10 +654,9 @@ Observed in an isolated server (own `HOME`/XDG/socket), never the active one:
 3. **Restored panes need a live pane.** After a headless server restart, restored panes are
    listed but reject input verbs until a client attaches; build new panes if you need
    fixtures. This is a Herdr observation from the isolated session, not a plugin behaviour.
-4. **Unranked rows are displaced.** Pi sessions with no validated delegation (and non-Pi
-   agents) appear after the ranked block, in native order, because a missing token sorts
-   last. A Pi session therefore moves to the top while it delegates and drops back when its
-   last delegation ends.
+4. **Every agent is ranked.** Pi sessions without delegation and non-Pi agents are singleton
+   families ordered by recency (see "Recency ordering"); a family with no transition since the
+   baseline sorts after stamped ones, in native order.
 5. **Worker recovery conflict after a tokenless restart (`.pi` task-189).** A Worker whose
    own durable tokens are gone but whose Worker-owned Subagent still carries a validated edge
    is parent-valid, so it receives a rank; Pi's recovery guard then refuses that Worker with

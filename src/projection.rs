@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub const BRANCH_TOKEN: &str = "agent_tree_branch";
 /// Previous composed token, cleared on upgrade but never written again.
 pub const LEGACY_ROW_TOKEN: &str = "agent_tree_row";
-/// Rank is published for ordering only.
+/// Rank is published for ordering only: `<13-digit inverted time>-<endpoint>-<6-digit preorder>`.
 pub const RANK_TOKEN: &str = "agent_tree_rank";
 /// Metadata report source.
 pub const SOURCE: &str = "agent-tree";
@@ -65,10 +65,17 @@ fn token_snapshot(model: &Model) -> Vec<TokenSnapshot> {
         .collect()
 }
 
+/// The tokens each row should carry.
+///
+/// `stamps` are the family recency prefixes and are supplied only by the subscriber, the sole
+/// writer of recency. Without them (a one-shot apply/reload/toggle) every agent row keeps
+/// its currently published rank, so a one-shot pass built from a stale snapshot can never
+/// overwrite a newer subscriber stamp; the subscriber publishes ranks on its next pass.
 pub fn desired(
     model: &Model,
     placements: &[Placement],
     endpoint_prefix: &str,
+    stamps: Option<&HashMap<String, u64>>,
 ) -> HashMap<String, Desired> {
     let placements: HashMap<&str, &Placement> = placements
         .iter()
@@ -97,9 +104,22 @@ pub fn desired(
             row.pane_id.clone(),
             Desired {
                 branch,
-                rank: placement
-                    .filter(|_| !row.cleanup_only)
-                    .map(|placement| format!("{endpoint_prefix}-{:06}", placement.rank)),
+                rank: if row.cleanup_only {
+                    None
+                } else {
+                    match (stamps, placement) {
+                        (Some(stamps), Some(placement)) => Some(crate::recency::format_rank(
+                            stamps
+                                .get(&placement.family_root)
+                                .copied()
+                                .unwrap_or(crate::recency::NEUTRAL),
+                            endpoint_prefix,
+                            placement.rank,
+                        )),
+                        (Some(_), None) => None,
+                        (None, _) => row.token(RANK_TOKEN),
+                    }
+                },
             },
         );
     }
@@ -122,13 +142,18 @@ fn strip_pi_title_prefix(title: &str) -> &str {
 }
 
 /// Writes only the differences, clearing the 0.2.0 composed token during migration.
-/// Ranks are unchanged; only validated descendants receive the current branch token.
+/// Only validated descendants receive the current branch token.
+///
+/// Every difference is attempted; if any write fails the first failure is returned after the
+/// rest were tried, so the caller retries the whole pass. Writes that did succeed are already
+/// reflected in `model` and are read back as published state by that retry.
 pub fn reconcile_tokens(
     socket: &str,
     model: &mut Model,
     desired: &HashMap<String, Desired>,
 ) -> R<usize> {
     let mut writes = 0usize;
+    let mut failure: Option<String> = None;
     for TokenSnapshot {
         pane_id,
         branch: current_branch,
@@ -162,10 +187,15 @@ pub fn reconcile_tokens(
                 model.set_token(&pane_id, RANK_TOKEN, want.rank.clone());
                 writes += 1;
             }
-            Err(e) => eprintln!("agent-tree: {e}"),
+            Err(e) => {
+                failure.get_or_insert(format!("cannot publish tokens for pane {pane_id}: {e}"));
+            }
         }
     }
-    Ok(writes)
+    match failure {
+        Some(failure) => Err(failure),
+        None => Ok(writes),
+    }
 }
 
 /// Clears the current branch, legacy composed row and rank, preserving all other sources.
@@ -350,7 +380,12 @@ mod tests {
             is_last_sibling: true,
             role: "worker".to_string(),
             rank,
+            family_root: pane_id.to_string(),
         }
+    }
+
+    fn neutral() -> Option<HashMap<String, u64>> {
+        Some(HashMap::new())
     }
 
     #[test]
@@ -369,20 +404,81 @@ mod tests {
     #[test]
     fn endpoint_rank_format_preserves_lexical_preorder_and_fits_herdr_token_limit() {
         assert_eq!(MAX_RANKS, 999_999);
+        let stamps = neutral();
         let mut previous: Option<String> = None;
         for rank in 1..=1_000u32 {
             let model = model(vec![crate::testutil::pi_row("p", "/s/p")]);
-            let mut map = desired(&model, &[placement("p", 0, rank)], "h0123456789abcdef");
+            let mut map = desired(
+                &model,
+                &[placement("p", 0, rank)],
+                "h0123456789abcdef",
+                stamps.as_ref(),
+            );
             let want = map.remove("p").unwrap().rank.unwrap();
-            assert_eq!(want, format!("h0123456789abcdef-{rank:06}"));
+            assert_eq!(want, format!("9999999999999-h0123456789abcdef-{rank:06}"));
             assert!(want.len() <= 80);
             if let Some(previous) = previous {
                 assert!(previous < want, "{previous} must sort before {want}");
             }
             previous = Some(want);
         }
-        assert!(format!("h0123456789abcdef-{:06}", MAX_RANKS).ends_with("999999"));
-        assert!(format!("h{}-{:06}", "a".repeat(64), MAX_RANKS).len() < 80);
+        assert!(format!("9999999999999-h0123456789abcdef-{:06}", MAX_RANKS).ends_with("999999"));
+    }
+
+    #[test]
+    fn a_stamped_family_ranks_ahead_of_older_and_neutral_families() {
+        let model = model(vec![
+            crate::testutil::pi_row("old", "/s/old"),
+            crate::testutil::pi_row("new", "/s/new"),
+            crate::testutil::pi_row("idle", "/s/idle"),
+        ]);
+        let placements = [
+            placement("old", 0, 1),
+            placement("new", 0, 2),
+            placement("idle", 0, 3),
+        ];
+        let stamps = HashMap::from([
+            ("old".to_string(), 9_999_999_990_500),
+            ("new".to_string(), 9_999_999_990_100),
+        ]);
+        let map = desired(&model, &placements, "h0123456789abcdef", Some(&stamps));
+        let mut order: Vec<(&String, &String)> = map
+            .iter()
+            .map(|(pane, want)| (pane, want.rank.as_ref().unwrap()))
+            .collect();
+        order.sort_by_key(|(_, rank)| *rank);
+        let panes: Vec<&str> = order.iter().map(|(pane, _)| pane.as_str()).collect();
+        assert_eq!(panes, ["new", "old", "idle"]);
+    }
+
+    #[test]
+    fn a_stale_one_shot_snapshot_cannot_overwrite_a_newer_published_rank() {
+        // The one-shot's snapshot still shows the older rank; the server already has a newer
+        // subscriber stamp. Without stamps the pass wants exactly what it read, so it makes no
+        // rank write at all - proven by never even connecting to the socket.
+        let stale = crate::testutil::with_token(
+            crate::testutil::pi_row("p", "/s/p"),
+            RANK_TOKEN,
+            "9999999990900-h0123456789abcdef-000001",
+        );
+        let mut model = model(vec![stale]);
+        let want = desired(&model, &[placement("p", 0, 1)], "h0123456789abcdef", None);
+        assert_eq!(
+            want["p"].rank.as_deref(),
+            Some("9999999990900-h0123456789abcdef-000001")
+        );
+
+        let dir = crate::testutil::TempDir::new("stale-one-shot");
+        let socket = dir.path().join("herdr.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let writes = reconcile_tokens(socket.to_str().unwrap(), &mut model, &want).unwrap();
+        assert_eq!(writes, 0);
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "a one-shot pass must not send any metadata write for an existing rank"
+        );
     }
 
     #[test]
@@ -418,10 +514,16 @@ mod tests {
             crate::testutil::pi_row("linked", "/s/linked"),
             crate::testutil::pi_row("unlinked", "/s/unlinked"),
         ]);
-        let map = desired(&model, &[placement("linked", 0, 1)], "h0123456789abcdef");
+        let stamps = neutral();
+        let map = desired(
+            &model,
+            &[placement("linked", 0, 1)],
+            "h0123456789abcdef",
+            stamps.as_ref(),
+        );
         assert_eq!(
             map["linked"].rank.as_deref(),
-            Some("h0123456789abcdef-000001")
+            Some("9999999999999-h0123456789abcdef-000001")
         );
         assert_eq!(map["linked"].branch, None, "roots carry no marker");
         assert_eq!(map["unlinked"].rank, None);
@@ -434,10 +536,19 @@ mod tests {
     #[test]
     fn roots_publish_only_the_rank_and_leave_native_workspace_tab_cells_to_herdr() {
         let model = model(vec![crate::testutil::pi_row("root", "/s/root")]);
-        let mut map = desired(&model, &[placement("root", 0, 1)], "h0123456789abcdef");
+        let stamps = neutral();
+        let mut map = desired(
+            &model,
+            &[placement("root", 0, 1)],
+            "h0123456789abcdef",
+            stamps.as_ref(),
+        );
         let root = map.remove("root").unwrap();
         assert_eq!(root.branch, None);
-        assert_eq!(root.rank.as_deref(), Some("h0123456789abcdef-000001"));
+        assert_eq!(
+            root.rank.as_deref(),
+            Some("9999999999999-h0123456789abcdef-000001")
+        );
     }
 
     #[test]
@@ -447,6 +558,7 @@ mod tests {
             &model(vec![worker]),
             &[placement("worker", 1, 2)],
             "h0123456789abcdef",
+            None,
         );
         assert_eq!(map.remove("worker").unwrap().branch.as_deref(), Some("└─W"));
     }
@@ -462,6 +574,7 @@ mod tests {
                 ..placement("sub", 1, 2)
             }],
             "h0123456789abcdef",
+            None,
         );
         assert_eq!(
             map.remove("sub").unwrap().branch.as_deref(),
@@ -486,7 +599,7 @@ mod tests {
         );
         let mut orphan = orphan;
         orphan.cleanup_only = true;
-        let desired = desired(&model(vec![orphan]), &[], "h0123456789abcdef");
+        let desired = desired(&model(vec![orphan]), &[], "h0123456789abcdef", None);
         assert_eq!(desired["released"].branch, None);
         assert_eq!(desired["released"].rank, None);
     }
@@ -504,6 +617,7 @@ mod tests {
                 ..placement("sub", 1, 1)
             }],
             "h0123456789abcdef",
+            None,
         );
         assert_eq!(map["sub"].branch.as_deref(), Some("└─S live-sideba…"));
         assert_eq!(map["codex"].branch, None);

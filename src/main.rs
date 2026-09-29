@@ -16,6 +16,7 @@ mod identity;
 mod lifecycle;
 mod mode;
 mod projection;
+mod recency;
 mod transport;
 mod wire;
 

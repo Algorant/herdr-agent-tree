@@ -521,19 +521,15 @@ for a in agents:
 ranked.sort()
 
 if ranked:
-    print("  %d agent(s) are in a validated delegation tree:\n" % len(ranked))
+    print("  %d ranked agent(s); each is a family root or singleton, and validated Workers/Subagents nest under their parent:\n" % len(ranked))
     for rank, ws, row in ranked:
-        print("    %s  %-6s %s" % (rank, ws, row or "(root)"))
-    print("\n  Those rows are nested in your Agents sidebar now.")
+        print("    %s  %-6s %s" % (rank, ws, row or "(family root)"))
+    print("\n  Families are listed most recently active first in your Agents sidebar.")
 else:
-    print("  No delegation exists at the moment, so nothing is nested yet.")
-    print("  Every Pi session you have open is a plain top-level session:")
-    print("  there are no Workers or Subagents for the plugin to place.")
+    print("  No agent is ranked yet: either no agent is open, or the subscriber has not")
+    print("  published its first ranks (it does so within about a second of its first pass).")
     print()
-    print("  This is the plugin working correctly, not a failure. To see a tree,")
-    print("  have one of your Pi sessions spawn a Subagent or start a Worker;")
-    print("  the child appears beneath its parent within a few seconds, and the")
-    print("  parent drops back to the flat list when its last child exits.")
+    print("  Ranks are published by the subscriber only; re-run 'herdr agent list' shortly to see them.")
 PY
 
   say "Done (development install)"

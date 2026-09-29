@@ -28,6 +28,10 @@ pub struct AgentRow {
     pub pane_id: String,
     pub agent: String,
     pub agent_status: String,
+    /// Herdr's stable terminal identity and its per-agent state transition counter. Both are
+    /// required for every agent row; only pane-only cleanup rows lack them.
+    pub terminal_id: Option<String>,
+    pub state_change_seq: Option<u64>,
     pub name: Option<String>,
     pub terminal_title_stripped: Option<String>,
     /// A pane-only snapshot row used solely to clear stale plugin-owned tokens after agent release.
@@ -52,6 +56,8 @@ impl AgentRow {
             pane_id,
             agent: text(value, "agent"),
             agent_status: text(value, "agent_status"),
+            terminal_id: optional_text(value, "terminal_id"),
+            state_change_seq: value.get("state_change_seq").and_then(Value::as_u64),
             name: optional_text(value, "name"),
             terminal_title_stripped: optional_text(value, "terminal_title_stripped"),
             cleanup_only: false,
@@ -145,6 +151,10 @@ impl Model {
             hasher.update(row.pane_id.as_bytes());
             hasher.update(b"\x1f");
             hasher.update(row.agent.as_bytes());
+            hasher.update(b"\x1f");
+            hasher.update(row.terminal_id.as_deref().unwrap_or_default().as_bytes());
+            hasher.update(b"\x1f");
+            hasher.update(row.state_change_seq.unwrap_or_default().to_le_bytes());
             hasher.update(b"\x1f");
             for value in [row.name.as_deref(), row.terminal_title_stripped.as_deref()] {
                 hasher.update(value.unwrap_or_default().as_bytes());
@@ -331,6 +341,14 @@ mod tests {
         let mut changed = rows();
         changed[0] = with_token(testutil::pi_row("a", "/s/a"), "agency_parent", "x");
         assert_ne!(digest(rows()), digest(changed), "token values are an input");
+
+        let mut transitioned = rows();
+        transitioned[0].state_change_seq = Some(2);
+        assert_ne!(
+            digest(rows()),
+            digest(transitioned),
+            "a state transition must force a recompute"
+        );
 
         let mut renamed = rows();
         renamed[0].name = Some("renamed".to_string());

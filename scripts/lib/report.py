@@ -371,7 +371,7 @@ def render_text(reports, split: bool) -> str:
         )
         panes = report["panes"]
         lines.append(
-            "  panes:       relationship-bearing %d (valid %d), ranked %d, delegated-without-relationship %d, ordinary Pi %d"
+            "  panes:       relationship-bearing %d (valid %d), ranked agents %d, delegated-without-relationship %d, ordinary Pi %d"
             % (
                 panes["relationship_bearing"],
                 panes["relationship_valid"],

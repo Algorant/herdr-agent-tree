@@ -6,6 +6,15 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- The most recently active Agent Tree family is listed first, across machines. Every top-level agent
+  (Pi or not) is a family or singleton; a real `state_change_seq` rise in any member promotes the
+  whole family. The rank token is now `<13-digit inverted time>-<endpoint>-<6-digit preorder>`; the
+  exact v0.3.0 format is read as neutral and migrated. See "Recency ordering" in the README,
+  including the clock-skew caveat.
+- `apply`, `reload` and `toggle` no longer rewrite an existing rank; the subscriber owns recency.
+
 ## [0.3.0] - 2026-09-28
 
 ### Added
