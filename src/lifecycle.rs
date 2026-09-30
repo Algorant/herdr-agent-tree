@@ -1025,7 +1025,9 @@ mod tests {
             "a failure must not settle the digest"
         );
 
-        // The next pass sees the same transition again and completes the family.
+        // The next pass sees the same transition again and completes the family. If both
+        // passes share a millisecond, root already has the final timestamp and only child needs
+        // rewriting; otherwise both rank tokens are rewritten.
         fake.lock().unwrap().refuse = None;
         let (ranked, writes) = publish(
             &mut model,
@@ -1036,7 +1038,11 @@ mod tests {
         )
         .unwrap()
         .expect("the retry publishes");
-        assert_eq!((ranked, writes), (3, 2));
+        assert_eq!(ranked, 3);
+        assert!(
+            writes == 1 || writes == 2,
+            "unexpected retry writes: {writes}"
+        );
         let ranks = fake.lock().unwrap().ranks.clone();
         let (root, child) = (&ranks["root"], &ranks["child"]);
         assert_eq!(root.split('-').next(), child.split('-').next());

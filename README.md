@@ -8,13 +8,14 @@ including across tabs and workspaces.
 It is an external Herdr plugin. It never changes Pi, never writes Pi-owned metadata, and
 never touches panes it cannot validate.
 
-Status: v0.3.0 is the latest source release. It targets Linux and Herdr 0.9.0+.
-The Herdr-managed GitHub install was dogfooded on Herdr 0.9.1 with a real Pi
-root, Worker and Subagents, including managed reinstall, tree/native toggle and cleanup.
-Live merged-client validation covered two endpoint families; cartlab remains on 0.1.0 and was
-not upgraded. See `docs/agent-tree/endpoint-rank-rollout.md` for the exact evidence and rollout
-limitation. The isolated `tests/e2e/sidebar.sh` and `tests/e2e/toggle.sh` exercise rendering and
-the shortcut (see "End-to-end test").
+Status: v0.4.0 is the current source release. It targets Linux and Herdr 0.9.0+.
+Staged development builds were healthy on x1nano and desktop-wsl under Herdr 0.9.3; the normal
+desktop combined client showed current singleton ordering across those machines. Child-triggered
+family promotion is covered by unit tests, not personally witnessed live. Cartlab remains on an
+older build and was outside this two-machine dogfood. Recency uses each machine's local clock, so
+clock skew can misorder close transitions; a clean stop or server restart resets ordering to its
+neutral baseline. The isolated `tests/e2e/sidebar.sh` and `tests/e2e/toggle.sh` exercise rendering
+and the shortcut (see "End-to-end test").
 
 ## How it works
 
@@ -144,7 +145,7 @@ The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` sect
 ### Herdr-managed source install (the normal user path)
 
 The supported install path for a normal user is Herdr's own plugin lifecycle. Install the
-v0.3.0 source release from GitHub:
+v0.4.0 source release from GitHub:
 
 Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 (`cargo build --locked --release`) in the managed checkout, and registers the plugin.
@@ -152,7 +153,7 @@ Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 and startup hooks do not run on install or enable in an already-running server.
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.3.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0
 herdr plugin enable agent-tree
 # From this repository checkout (or the managed source checkout):
 scripts/activate-managed.sh
@@ -196,7 +197,7 @@ start**, not on install or enable, which is why the explicit `apply` is part of 
 Reinstall from the new tag; Herdr replaces the managed source checkout and reruns the build:
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.3.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0
 ```
 
 There is no separate `herdr plugin update` in plugin v1, no `latest`, and no side-by-side
@@ -402,8 +403,8 @@ The family whose agent most recently changed state is listed first, across machi
 - Every top-level agent is a family; a Worker's Subagent stays nested under the Worker. A real
   rise of Herdr's `state_change_seq` in any member moves the whole outermost family above older
   ones. Output, focus, renames and this plugin's own metadata writes do not move it.
-- The subscriber compares `state_change_seq` on its existing 500ms stream timeout, at most once a
-  second (no per-pane subscriptions), keeping only an in-memory terminal -> sequence map. The first
+- The subscriber checks `state_change_seq` on its existing stream timeout about every 1–2 seconds
+  (no per-pane subscriptions), keeping only an in-memory terminal -> sequence map. The first
   snapshot is a neutral baseline; an agent first seen after it counts as activity.
 - The stamp is the local wall clock, published as the rank's inverted-time prefix shared by the
   whole family. The published prefixes are the only record: they are read back each pass and a

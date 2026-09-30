@@ -6,14 +6,26 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-29
+
 ### Changed
 
-- The most recently active Agent Tree family is listed first, across machines. Every top-level agent
-  (Pi or not) is a family or singleton; a real `state_change_seq` rise in any member promotes the
-  whole family. The rank token is now `<13-digit inverted time>-<endpoint>-<6-digit preorder>`; the
-  exact v0.3.0 format is read as neutral and migrated. See "Recency ordering" in the README,
-  including the clock-skew caveat.
-- `apply`, `reload` and `toggle` no longer rewrite an existing rank; the subscriber owns recency.
+- Agent Tree orders every top-level agent family (including singleton agents) by its most recent
+  member activity across machines. A real `state_change_seq` rise in any family member promotes
+  the whole family; nested children remain beneath their parent. Output, focus and metadata changes
+  do not promote a family. The subscriber checks state changes about every 1–2 seconds and owns
+  recency; `apply`, `reload` and `toggle` do not rewrite an existing rank. The rank token is now
+  `<13-digit inverted time>-<endpoint>-<6-digit preorder>`; the exact v0.3.0 format is read as
+  neutral and migrated. Local clock skew can misorder close transitions across machines. A clean
+  stop or Herdr server restart resets ordering to a neutral baseline. See "Recency ordering" in the
+  README.
+
+### Validation
+
+- On staged development builds with Herdr 0.9.3, the Agent Tree subscribers on x1nano and
+  desktop-wsl were healthy. The normal desktop combined client showed current singleton ordering
+  across the two machines. Child-triggered family promotion is covered by unit tests but was not
+  witnessed live. Cartlab remains on an older build and was outside this two-machine dogfood.
 
 ## [0.3.0] - 2026-09-28
 
@@ -168,7 +180,8 @@ semantic versioning.
   still parses; uninstall is transactional with a full preflight and automatic restore; and
   the deployment lock is removed only when its owner token still matches.
 
-[Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Algorant/herdr-agent-tree/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Algorant/herdr-agent-tree/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Algorant/herdr-agent-tree/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Algorant/herdr-agent-tree/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Algorant/herdr-agent-tree/releases/tag/v0.1.0
