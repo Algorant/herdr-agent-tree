@@ -1,0 +1,86 @@
+{"ts":"2026-09-27T02:04:53Z","event":"task.created","id":"task-1","summary":"Investigate readable Agent Tree identity within Herdr sidebar constraints","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":1}
+{"ts":"2026-09-27T02:05:01Z","event":"task.updated","id":"task-1","summary":"Updated task-1 metadata: references","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":2}
+{"ts":"2026-09-27T02:05:06Z","event":"task.updated","id":"task-1","summary":"Updated task-1 metadata: references","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":3}
+{"ts":"2026-09-27T02:05:10Z","event":"accord.claimed","id":"task-1","summary":"Accord claim for task-1","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":4}
+{"ts":"2026-09-27T02:10:01Z","event":"accord.delivered","id":"task-1","summary":"Accord deliver for task-1","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":5}
+{"ts":"2026-09-27T02:10:08Z","event":"task.completed","id":"task-1","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":6}
+{"ts":"2026-09-27T02:37:36Z","event":"task.created","id":"task-2","summary":"Disposable live fixture for nested Agent Tree Worker and Subagent","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":7}
+{"ts":"2026-09-27T02:38:42Z","event":"accord.claimed","id":"task-2","summary":"Accord claim for task-2","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":8}
+{"ts":"2026-09-27T02:40:28Z","event":"accord.released","id":"task-2","summary":"Accord release for task-2","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":9,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-27T02:41:00Z","event":"accord.claimed","id":"task-2","summary":"Accord claim for task-2","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":10}
+{"ts":"2026-09-27T02:41:09Z","event":"accord.delivered","id":"task-2","summary":"Accord deliver for task-2","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":11}
+{"ts":"2026-09-27T02:41:13Z","event":"task.completed","id":"task-2","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":12}
+{"ts":"2026-09-27T04:46:58Z","event":"task.created","id":"task-3","summary":"Render a role-aware one-line Agent Tree row without repeated Pi titles","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":13}
+{"ts":"2026-09-27T04:48:50Z","event":"accord.claimed","id":"task-3","summary":"Accord claim for task-3","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":14}
+{"ts":"2026-09-27T12:04:05Z","event":"accord.delivered","id":"task-3","summary":"Accord deliver for task-3","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":15}
+{"ts":"2026-09-27T12:04:05Z","event":"accord.rework","id":"task-3","summary":"Accord rework for task-3","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":16}
+{"ts":"2026-09-27T12:25:01Z","event":"accord.delivered","id":"task-3","summary":"Accord deliver for task-3","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":17}
+{"ts":"2026-09-27T12:25:01Z","event":"task.completed","id":"task-3","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":18}
+{"ts":"2026-09-27T12:51:20Z","event":"task.created","id":"task-4","summary":"Make managed-to-staged Agent Tree dogfood transition fail safely before relinking","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":19}
+{"ts":"2026-09-27T13:06:54Z","event":"task.created","id":"task-5","summary":"Render readable Agent rows when an endpoint lacks a compatible Agent Tree plugin","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":20}
+{"ts":"2026-09-27T13:07:19Z","event":"task.created","id":"task-6","summary":"Prepare the v0.2.0 source release (version, changelog, install docs)","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":21}
+{"ts":"2026-09-27T13:07:26Z","event":"accord.claimed","id":"task-6","summary":"Accord claim for task-6","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":22}
+{"ts":"2026-09-27T13:14:36Z","event":"accord.delivered","id":"task-6","summary":"Accord deliver for task-6","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":23}
+{"ts":"2026-09-27T13:14:36Z","event":"accord.rework","id":"task-6","summary":"Accord rework for task-6","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":24}
+{"ts":"2026-09-27T13:22:32Z","event":"accord.delivered","id":"task-6","summary":"Accord deliver for task-6","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":25}
+{"ts":"2026-09-27T13:22:32Z","event":"task.completed","id":"task-6","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":26}
+{"ts":"2026-09-28T16:26:18Z","event":"accord.claimed","id":"task-4","summary":"Accord claim for task-4","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":27}
+{"ts":"2026-09-28T16:26:18Z","event":"accord.claimed","id":"task-5","summary":"Accord claim for task-5","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":28}
+{"ts":"2026-09-28T16:35:20Z","event":"accord.delivered","id":"task-4","summary":"Accord deliver for task-4","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":29}
+{"ts":"2026-09-28T16:35:20Z","event":"accord.rework","id":"task-4","summary":"Accord rework for task-4","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":30}
+{"ts":"2026-09-28T16:49:31Z","event":"accord.delivered","id":"task-4","summary":"Accord deliver for task-4","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":31}
+{"ts":"2026-09-28T16:49:31Z","event":"task.completed","id":"task-4","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":32}
+{"ts":"2026-09-28T18:48:47Z","event":"task.created","id":"task-7","summary":"Agent Tree ranks collide across endpoints in a multi-machine sidebar","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":33}
+{"ts":"2026-09-28T18:56:21Z","event":"task.updated","id":"task-7","summary":"Updated task-7 metadata: body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":34}
+{"ts":"2026-09-28T18:57:57Z","event":"accord.claimed","id":"task-7","summary":"Accord claim for task-7","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":35}
+{"ts":"2026-09-28T19:32:06Z","event":"accord.released","id":"task-7","summary":"Accord release for task-7","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":36,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-28T19:32:32Z","event":"task.created","id":"task-8","summary":"Spike: establish an isolated Herdr 0.9.1 merged-client rank-ordering witness","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":37}
+{"ts":"2026-09-28T19:32:36Z","event":"task.updated","id":"task-7","summary":"Updated task-7 metadata: blockers","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":38}
+{"ts":"2026-09-28T19:32:46Z","event":"accord.claimed","id":"task-8","summary":"Accord claim for task-8","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":39}
+{"ts":"2026-09-28T19:35:17Z","event":"task.updated","id":"task-8","summary":"Updated task-8 metadata: body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":40}
+{"ts":"2026-09-28T19:35:20Z","event":"accord.released","id":"task-8","summary":"Accord release for task-8","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":41,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-28T19:35:29Z","event":"task.completed","id":"task-8","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":42}
+{"ts":"2026-09-28T19:35:47Z","event":"task.updated","id":"task-7","summary":"Updated task-7 metadata: body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":43}
+{"ts":"2026-09-28T19:46:47Z","event":"accord.delivered","id":"task-5","summary":"Accord deliver for task-5","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":44}
+{"ts":"2026-09-28T19:46:47Z","event":"accord.rework","id":"task-5","summary":"Accord rework for task-5","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":45}
+{"ts":"2026-09-28T20:02:34Z","event":"accord.delivered","id":"task-5","summary":"Accord deliver for task-5","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":46}
+{"ts":"2026-09-28T20:02:34Z","event":"task.completed","id":"task-5","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":47}
+{"ts":"2026-09-28T20:02:51Z","event":"accord.claimed","id":"task-7","summary":"Accord claim for task-7","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":48}
+{"ts":"2026-09-28T20:55:10Z","event":"accord.delivered","id":"task-7","summary":"Accord deliver for task-7","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":49}
+{"ts":"2026-09-28T20:55:10Z","event":"task.completed","id":"task-7","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":50}
+{"ts":"2026-09-28T20:56:07Z","event":"task.created","id":"task-9","summary":"Prepare v0.3.0 source release after fallback and cross-endpoint rank fixes","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":51}
+{"ts":"2026-09-28T20:56:15Z","event":"accord.claimed","id":"task-9","summary":"Accord claim for task-9","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":52}
+{"ts":"2026-09-28T21:04:56Z","event":"accord.delivered","id":"task-9","summary":"Accord deliver for task-9","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":53}
+{"ts":"2026-09-28T21:04:56Z","event":"task.completed","id":"task-9","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":54}
+{"ts":"2026-09-29T12:20:11Z","event":"task.created","id":"task-10","summary":"Promote the most recently active Agent Tree parent family to the top","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":55}
+{"ts":"2026-09-29T12:31:34Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: effort, acceptance, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":56}
+{"ts":"2026-09-29T12:35:32Z","event":"task.created","id":"task-11","summary":"Spike: find a cross-machine agent state-transition time for recency ordering","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":57}
+{"ts":"2026-09-29T12:35:34Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: blockers","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":58}
+{"ts":"2026-09-29T12:35:44Z","event":"accord.claimed","id":"task-11","summary":"Accord claim for task-11","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":59}
+{"ts":"2026-09-29T12:42:09Z","event":"task.updated","id":"task-11","summary":"Updated task-11 metadata: references, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":60}
+{"ts":"2026-09-29T12:42:13Z","event":"accord.released","id":"task-11","summary":"Accord release for task-11","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":61,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-29T12:42:17Z","event":"task.completed","id":"task-11","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":62}
+{"ts":"2026-09-29T12:53:27Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: references, acceptance, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":63}
+{"ts":"2026-09-29T12:53:39Z","event":"accord.claimed","id":"task-10","summary":"Accord claim for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":64}
+{"ts":"2026-09-29T12:57:27Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: acceptance, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":65}
+{"ts":"2026-09-29T12:59:03Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: acceptance, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":66}
+{"ts":"2026-09-29T13:01:10Z","event":"accord.released","id":"task-10","summary":"Accord release for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":67,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-29T13:01:23Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: acceptance, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":68}
+{"ts":"2026-09-29T13:01:35Z","event":"accord.claimed","id":"task-10","summary":"Accord claim for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":69}
+{"ts":"2026-09-29T14:16:07Z","event":"accord.delivered","id":"task-10","summary":"Accord deliver for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":70}
+{"ts":"2026-09-29T14:16:07Z","event":"accord.rework","id":"task-10","summary":"Accord rework for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":71}
+{"ts":"2026-09-29T14:20:41Z","event":"accord.blocked","id":"task-10","summary":"Accord block for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":72}
+{"ts":"2026-09-29T17:49:31Z","event":"accord.released","id":"task-10","summary":"Accord release for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":73,"data":{"disposition":"discarded"}}
+{"ts":"2026-09-29T17:49:55Z","event":"task.updated","id":"task-10","summary":"Updated task-10 metadata: effort, acceptance, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":74}
+{"ts":"2026-09-29T17:50:44Z","event":"accord.claimed","id":"task-10","summary":"Accord claim for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":75}
+{"ts":"2026-09-29T18:08:38Z","event":"accord.delivered","id":"task-10","summary":"Accord deliver for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":76}
+{"ts":"2026-09-29T18:08:38Z","event":"accord.rework","id":"task-10","summary":"Accord rework for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":77}
+{"ts":"2026-09-29T18:24:29Z","event":"accord.delivered","id":"task-10","summary":"Accord deliver for task-10","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":78}
+{"ts":"2026-09-29T18:24:29Z","event":"task.completed","id":"task-10","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":79}
+{"ts":"2026-09-30T03:33:59Z","event":"task.created","id":"task-12","summary":"Prepare v0.4.0 Agent Tree source release for family recency ordering","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":80}
+{"ts":"2026-09-30T03:34:09Z","event":"accord.claimed","id":"task-12","summary":"Accord claim for task-12","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":81}
+{"ts":"2026-09-30T03:41:28Z","event":"task.updated","id":"task-12","summary":"Updated task-12 metadata: relatedFiles, body","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":82}
+{"ts":"2026-09-30T03:41:35Z","event":"accord.delivered","id":"task-12","summary":"Accord deliver for task-12","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":83}
+{"ts":"2026-09-30T03:41:35Z","event":"accord.rework","id":"task-12","summary":"Accord rework for task-12","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":84}
+{"ts":"2026-09-30T03:48:50Z","event":"accord.delivered","id":"task-12","summary":"Accord deliver for task-12","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":85}
+{"ts":"2026-09-30T03:48:50Z","event":"task.completed","id":"task-12","summary":"Completed","actor":"ff255241-a129-4aa2-bcec-f0c1cd275b10","seq":86}
