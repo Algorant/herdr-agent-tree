@@ -11,7 +11,8 @@ accord:
   acceptance: ["Worker launches one read-only Subagent and reports needs-input without changing any files"]
   updatedAt: "2026-10-03T03:03:10Z"
 createdAt: "2026-10-03T03:03:10Z"
-updatedAt: "2026-10-03T03:03:10Z"
+updatedAt: "2026-10-03T03:03:27Z"
+effort: "trivial"
 ---
 
 ## Description
