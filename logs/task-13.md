@@ -3,7 +3,6 @@ id: task-13
 uid: aed22243-17a2-4634-869c-c6a9f42d94b7
 type: task
 title: "[throwaway] Live agent-tree nesting smoke test Worker"
-state: "todo"
 priority: "low"
 tags: ["smoke-test"]
 accord:
@@ -13,8 +12,12 @@ accord:
   note: "discarded: Throwaway smoke test complete: live Agent Tree nesting verified (root → Worker → nested Subagent). Discarding as planned."
   updatedAt: "2026-10-03T03:04:08Z"
 createdAt: "2026-10-03T03:03:10Z"
-updatedAt: "2026-10-03T03:04:08Z"
+updatedAt: "2026-10-03T03:04:24Z"
 effort: "trivial"
+archivedAt: "2026-10-03T03:04:24Z"
+resolution:
+  outcome: "canceled"
+  note: "Throwaway live smoke test finished; Worker discarded. Tree verified working with v0.4.0."
 ---
 
 ## Description
