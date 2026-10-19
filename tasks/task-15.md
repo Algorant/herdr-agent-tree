@@ -4,16 +4,18 @@ uid: 8cf828a1-d374-4f37-ab39-b20f5c1f6f5e
 type: task
 kind: "research"
 title: "Research: nest a workspace's non-main tab agents (manus) under its main-tab agent (Ceph)"
-state: todo
+state: "in-progress"
 priority: "medium"
 relatedFiles: ["README.md", "docs/agent-tree/m2-contract.md", "src/forest.rs", "src/identity.rs", "src/decoration.rs"]
 tags: ["research", "identity", "nesting"]
 accord:
-  status: "ready"
+  status: "claimed"
   acceptance: ["A written comparison of options (a), (b) and (c) covers identity validation, the \"never infer\" rule, recency ranking, Workers and Subagents already nested, and cross-workspace/cross-machine cases.", "An html Sideshow post shows st's current sidebar next to the proposed nesting, including a Worker under main and a Subagent under a Worker, with 1-2 variants where the design has real choices.", "Herdra receives one request with this Task ID, the Sideshow session URL, the key findings and a recommended option, stating how it respects or changes the never-infer rule.", "No plugin or publisher code changes are made under this Task."]
-  updatedAt: "2026-10-19T19:59:46Z"
+  claimedAt: "2026-10-19T19:59:51Z"
+  updatedAt: "2026-10-19T19:59:51Z"
 createdAt: "2026-10-19T19:59:46Z"
-updatedAt: "2026-10-19T19:59:46Z"
+updatedAt: "2026-10-19T19:59:51Z"
+assignee: "herdr-agent-tree"
 ---
 
 ## Description
