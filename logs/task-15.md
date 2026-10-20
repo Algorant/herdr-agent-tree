@@ -4,21 +4,25 @@ uid: 8cf828a1-d374-4f37-ab39-b20f5c1f6f5e
 type: task
 kind: "research"
 title: "Research: nest a workspace's non-main tab agents (manus) under its main-tab agent (Ceph)"
-state: "in-progress"
 priority: "medium"
 relatedFiles: ["README.md", "docs/agent-tree/m2-contract.md", "src/forest.rs", "src/identity.rs", "src/decoration.rs"]
 tags: ["research", "identity", "nesting"]
 accord:
-  status: "delivered"
+  status: "accepted"
   acceptance: ["A written comparison of options (a), (b) and (c) covers identity validation, the \"never infer\" rule, recency ranking, Workers and Subagents already nested, and cross-workspace/cross-machine cases.", "An html Sideshow post shows st's current sidebar next to the proposed nesting, including a Worker under main and a Subagent under a Worker, with 1-2 variants where the design has real choices.", "Herdra receives one request with this Task ID, the Sideshow session URL, the key findings and a recommended option, stating how it respects or changes the never-infer rule.", "No plugin or publisher code changes are made under this Task."]
   claimedAt: "2026-10-19T19:59:51Z"
   deliveredAt: "2026-10-20T13:49:39Z"
   summary: "Compared options (a), (b1), (b2) and (c) against the live w8 state, the plugin code and pi-agency's publishers. Published Sideshow session kVQCftjbtOY: current vs Variant A/B, full-depth (b2) mockup, and the options table. Recommended (b2) + Variant A; Algorant approved via Herdra (m6ef2dd4d). Implementation filed as task-16."
   evidence: ["Sideshow http://localhost:8228/session/kVQCftjbtOY: posts 5wcMVM99DE0 (mockups), Ivs70rG37Dg (options), W6rEw-M7aGo (full depth)", "Herdr 0.9.5 schema: agent.view.set has only filter and sort, with no grouping primitive", "pi-agency relationshipTokens sets agency_parent to the caller's session file; forest.rs resolves parents by recomputed hash; decoration.rs collapses from depth 4", "Herdra result m6ef2dd4d: Algorant approves (b2) with Variant A"]
-  updatedAt: "2026-10-20T13:49:39Z"
+  reviewer: "Algorant"
+  updatedAt: "2026-10-20T13:49:55Z"
 createdAt: "2026-10-19T19:59:46Z"
-updatedAt: "2026-10-20T13:49:39Z"
+updatedAt: "2026-10-20T13:49:55Z"
 assignee: "herdr-agent-tree"
+archivedAt: "2026-10-20T13:49:55Z"
+resolution:
+  outcome: "completed"
+  reviewer: "Algorant"
 ---
 
 ## Description

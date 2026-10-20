@@ -1,3 +1,5 @@
 {"ts":"2026-10-19T19:59:46Z","event":"task.created","id":"task-15","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":1,"data":{"title":"Research: nest a workspace's non-main tab agents (manus) under its main-tab agent (Ceph)"}}
 {"ts":"2026-10-19T19:59:51Z","event":"accord.claimed","id":"task-15","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":2,"data":{}}
 {"ts":"2026-10-20T13:49:39Z","event":"accord.delivered","id":"task-15","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":3,"data":{}}
+{"ts":"2026-10-20T13:49:55Z","event":"task.created","id":"task-16","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":4,"data":{"title":"Nest a workspace's agents under its explicit lead (agency_lead) with Variant A ordering"}}
+{"ts":"2026-10-20T13:49:55Z","event":"task.completed","id":"task-15","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":5,"data":{}}
