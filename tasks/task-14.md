@@ -7,13 +7,13 @@ state: todo
 priority: "low"
 effort: "small"
 relatedFiles: ["README.md", "scripts/activate-managed.sh"]
-tags: ["papercut"]
+tags: ["papercut", "plan-first"]
 accord:
   status: "ready"
   acceptance: ["README Install/Update document that non-interactive `herdr plugin install` needs `--yes`", "Upgrading a managed install with an older live subscriber via the documented steps ends with the doctor reporting a SHA-matching subscriber, without needing a separate undocumented reload"]
   updatedAt: "2026-10-03T03:04:32Z"
 createdAt: "2026-10-03T03:04:32Z"
-updatedAt: "2026-10-03T03:04:32Z"
+updatedAt: "2026-10-20T16:48:35Z"
 ---
 
 ## Description
