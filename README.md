@@ -8,7 +8,7 @@ including across tabs and workspaces.
 It is an external Herdr plugin. It never changes Pi, never writes Pi-owned metadata, and
 never touches panes it cannot validate.
 
-Status: v0.4.0 is the current source release. It targets Linux and Herdr 0.9.0+.
+Status: v0.5.0 is the current source release. It targets Linux and Herdr 0.9.0+.
 Staged development builds were healthy on x1nano and desktop-wsl under Herdr 0.9.3; the normal
 desktop combined client showed current singleton ordering across those machines. Child-triggered
 family promotion is covered by unit tests, not personally witnessed live. Cartlab remains on an
@@ -155,7 +155,7 @@ The only route is a real agent launch. See `docs/agent-tree/m1-evidence.md` sect
 ### Herdr-managed source install (the normal user path)
 
 The supported install path for a normal user is Herdr's own plugin lifecycle. Install the
-v0.4.0 source release from GitHub:
+v0.5.0 source release from GitHub:
 
 Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 (`cargo build --locked --release`) in the managed checkout, and registers the plugin.
@@ -165,7 +165,7 @@ and startup hooks do not run on install or enable in an already-running server.
 `--yes` is required when stdin is not interactive (scripts, remote shells, agents).
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0 --yes
+herdr plugin install Algorant/herdr-agent-tree --ref v0.5.0 --yes
 herdr plugin enable agent-tree
 # From this repository checkout (or the managed source checkout):
 scripts/activate-managed.sh
@@ -210,7 +210,7 @@ Reinstall from the new tag; Herdr replaces the managed source checkout and rerun
 Then rerun the activation script, whose `reload` replaces the old subscriber with the new build:
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0 --yes
+herdr plugin install Algorant/herdr-agent-tree --ref v0.5.0 --yes
 scripts/activate-managed.sh
 scripts/doctor.sh --endpoint local
 ```

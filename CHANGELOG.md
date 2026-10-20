@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-20
+
 ### Fixed
 
 - A managed upgrade no longer leaves the old subscriber running: `scripts/activate-managed.sh`

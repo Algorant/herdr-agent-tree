@@ -1,6 +1,6 @@
 id = "agent-tree"
 name = "Agent Tree"
-version = "0.4.0"
+version = "0.5.0"
 min_herdr_version = "0.9.0"
 description = "Shows Pi Subagents and Workers beneath their delegating agent, and a workspace's other agents beneath its validated lead, in the native Agents sidebar"
 platforms = ["linux"]
