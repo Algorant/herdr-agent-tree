@@ -5,3 +5,4 @@
 {"ts":"2026-10-20T13:49:55Z","event":"task.completed","id":"task-15","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":5,"data":{}}
 {"ts":"2026-10-20T13:50:44Z","event":"task.updated","id":"task-16","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":6,"data":{"fields":["effort","validation"]}}
 {"ts":"2026-10-20T13:51:05Z","event":"accord.claimed","id":"task-16","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":7,"data":{}}
+{"ts":"2026-10-20T14:42:29Z","event":"accord.delivered","id":"task-16","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":8,"data":{}}
