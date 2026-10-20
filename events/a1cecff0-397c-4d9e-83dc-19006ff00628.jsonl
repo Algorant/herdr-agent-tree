@@ -11,3 +11,4 @@
 {"ts":"2026-10-20T15:49:49Z","event":"task.completed","id":"task-17","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":11,"data":{}}
 {"ts":"2026-10-20T16:48:35Z","event":"task.updated","id":"task-14","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":12,"data":{"fields":["tags"]}}
 {"ts":"2026-10-20T16:48:54Z","event":"accord.claimed","id":"task-14","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":13,"data":{}}
+{"ts":"2026-10-20T17:04:13Z","event":"accord.delivered","id":"task-14","actor":"a1cecff0-397c-4d9e-83dc-19006ff00628","seq":14,"data":{}}
