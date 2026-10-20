@@ -3,19 +3,21 @@ id: task-16
 uid: c27d2467-6b13-4ffb-ac1a-d45cc9da0d8d
 type: task
 title: "Nest a workspace's agents under its explicit lead (agency_lead) with Variant A ordering"
-state: todo
+state: "in-progress"
 priority: "medium"
 references: ["task-15"]
 relatedFiles: ["src/transport.rs", "src/identity.rs", "src/forest.rs", "src/decoration.rs", "src/projection.rs", "src/testutil.rs", "scripts/lib/report.py", "tests/e2e/sidebar.sh", "docs/agent-tree/m2-contract.md", "README.md", "CHANGELOG.md", "herdr-plugin.toml"]
 tags: ["identity", "nesting"]
 accord:
-  status: "ready"
+  status: "claimed"
   acceptance: ["With exactly one valid agency_lead anchor in a workspace, its other undelegated agent rows (Pi and non-Pi) render as depth-1 `├─M`/`└─M` children after the anchor's delegated children, sharing the anchor's family rank prefix and a contiguous preorder.", "A Worker started by a manus and that Worker's Subagent nest beneath the manus (Ceph -> M -> W -> S, `│  │  └─S name` at depth 3).", "A forged or stale agency_lead, two anchors in one workspace, or an anchor with a delegation parent produces no grouping, and the rows return to today's roots; the tab label is never read.", "docs/agent-tree/m2-contract.md (C2/C4/C5), README and CHANGELOG describe workspace membership under a validated anchor as a second edge kind, while delegation edges stay never-inferred.", "scripts/doctor.sh reports lead-declared/lead-valid panes, anchored and ambiguous workspaces, and member counts, in both text and --json output.", "`just test` (scripts/check.sh, including the extended isolated tests/e2e/sidebar.sh) passes."]
+  claimedAt: "2026-10-20T13:51:05Z"
   validation: ["$ just test"]
-  updatedAt: "2026-10-20T13:50:44Z"
+  updatedAt: "2026-10-20T13:51:05Z"
 createdAt: "2026-10-20T13:49:55Z"
-updatedAt: "2026-10-20T13:50:44Z"
+updatedAt: "2026-10-20T13:51:05Z"
 effort: "medium"
+assignee: "worker-task-16-53e4635e"
 ---
 
 ## Description
