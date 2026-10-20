@@ -18,7 +18,7 @@ case "$*" in
   'status') printf 'running\n' ;;
   'config check') python3 -c 'import os,tomllib; tomllib.load(open(os.environ["XDG_CONFIG_HOME"]+"/herdr/config.toml","rb"))' ;;
   'server reload-config') printf 'reloaded\n' ;;
-  'plugin action invoke agent-tree.apply') printf '{"result":{"log":{"log_id":"plugin-log-1","status":"running"}}}\n' ;;
+  'plugin action invoke agent-tree.reload') printf '{"result":{"log":{"log_id":"plugin-log-1","status":"running"}}}\n' ;;
   'plugin log list --plugin agent-tree --limit 20') printf '{"result":{"logs":[{"log_id":"plugin-log-1","status":"%s"}]}}\n' "${MOCK_ACTION_STATUS:-succeeded}" ;;
   *) printf 'unexpected mock herdr command: %s\n' "$*" >&2; exit 1 ;;
 esac
@@ -26,7 +26,7 @@ SH
 chmod +x "$TEMP/bin/herdr"
 export XDG_CONFIG_HOME=$TEMP/config HERDR_BIN_PATH=$TEMP/bin/herdr
 "$ROOT/scripts/activate-managed.sh" > "$TEMP/first.out"
-grep -q 'apply completed' "$TEMP/first.out"
+grep -q 'reload completed' "$TEMP/first.out"
 python3 - "$CONFIG" <<'PY'
 import sys, tomllib
 with open(sys.argv[1], 'rb') as f:
@@ -41,9 +41,9 @@ cmp -s "$CONFIG" "$TEMP/first-config"
 
 # A started action is not a completed action: reject a terminal failure.
 if MOCK_ACTION_STATUS=failed "$ROOT/scripts/activate-managed.sh" > "$TEMP/failed.out" 2>&1; then
-  printf 'a failed apply action was incorrectly accepted\n' >&2; exit 1
+  printf 'a failed reload action was incorrectly accepted\n' >&2; exit 1
 fi
-grep -q 'apply failed' "$TEMP/failed.out"
+grep -q 'reload failed' "$TEMP/failed.out"
 
 # Never displace custom rows, and never invoke the action in that case.
 printf '\n[ui.sidebar.agents]\nrows = [["agent"]]\n' > "$CONFIG"

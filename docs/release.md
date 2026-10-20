@@ -3,7 +3,7 @@
 Agent Tree is installed from source by Herdr itself. The sole normal-user path is:
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.1.0 --yes
 ```
 
 Herdr clones that source revision, runs the manifest `[[build]]` command, registers the
@@ -48,7 +48,7 @@ argv verbatim, and checks that every runtime manifest command is executable and 
 built binary.
 
 Herdr owns installation, registration and rebuild/update behavior. Updating means reinstalling
-from a newer ref (`herdr plugin install Algorant/herdr-agent-tree --ref <newer-tag>`); Herdr
+from a newer ref (`herdr plugin install Algorant/herdr-agent-tree --ref <newer-tag> --yes`); Herdr
 replaces the managed checkout. Removing the plugin is `herdr plugin uninstall agent-tree`.
 
 ## Local development tooling
@@ -99,5 +99,6 @@ the release ref and clean-source build before publishing the source release.
 
 For a new machine, install from the tag above, add the rows configuration from the README,
 then activate it with `herdr plugin enable agent-tree`, `herdr server reload-config` and
-`herdr plugin action invoke agent-tree.apply`. Reinstall from a newer tag to update; this
+`herdr plugin action invoke agent-tree.reload`. Reinstall from a newer tag, then rerun
+`scripts/activate-managed.sh`, to update; this
 release does not provide binary archives or a separate `plugin update` command.

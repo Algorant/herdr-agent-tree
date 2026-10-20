@@ -162,8 +162,10 @@ Herdr clones the tagged source revision, runs the manifest `[[build]]` command
 **Installation is not activation**: the plugin cannot change Herdr's sidebar configuration,
 and startup hooks do not run on install or enable in an already-running server.
 
+`--yes` is required when stdin is not interactive (scripts, remote shells, agents).
+
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0 --yes
 herdr plugin enable agent-tree
 # From this repository checkout (or the managed source checkout):
 scripts/activate-managed.sh
@@ -172,7 +174,7 @@ scripts/doctor.sh --endpoint local
 
 `activate-managed.sh` preserves the GitHub-managed registration, refuses to replace custom
 Agents rows, backs up the config when adding the required branch/native row, reloads config,
-invokes `apply`, and **waits for the action log to succeed**. A user-owned
+invokes `reload` (which replaces an older subscriber left by a reinstall), and **waits for the action log to succeed**. A user-owned
 `[ui.sidebar.agents]` block is never rewritten. If it still references `$agent_tree_row`,
 manually migrate it to `rows = [["state_icon", "$agent_tree_branch", "workspace", "tab"]]`
 before activation; this applies to both the 0.1.0 title-cell row and 0.2.0 composed row.
@@ -194,20 +196,23 @@ Alternatively, add the sidebar rows block from "Agents row configuration" below,
 ```sh
 herdr plugin enable agent-tree
 herdr server reload-config
-herdr plugin action invoke agent-tree.apply
+herdr plugin action invoke agent-tree.reload
 herdr plugin log list --plugin agent-tree --limit 1  # require status: succeeded
 ```
 
 Without a row that references `$agent_tree_branch`, Herdr still renders the native
 workspace/tab cells but cannot show tree markers. The startup hook runs on the next **server
-start**, not on install or enable, which is why the explicit `apply` is part of activation.
+start**, not on install or enable, which is why the explicit `reload` is part of activation.
 
 ### Update
 
-Reinstall from the new tag; Herdr replaces the managed source checkout and reruns the build:
+Reinstall from the new tag; Herdr replaces the managed source checkout and reruns the build.
+Then rerun the activation script, whose `reload` replaces the old subscriber with the new build:
 
 ```sh
-herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0
+herdr plugin install Algorant/herdr-agent-tree --ref v0.4.0 --yes
+scripts/activate-managed.sh
+scripts/doctor.sh --endpoint local
 ```
 
 There is no separate `herdr plugin update` in plugin v1, no `latest`, and no side-by-side
@@ -279,7 +284,7 @@ The staging directory is local hidden state, so this is not the documented path 
 user.
 
 These local loops are not the normal install path. A normal user installs from source with
-`herdr plugin install Algorant/herdr-agent-tree --ref <tag>`, which lets Herdr clone, build and
+`herdr plugin install Algorant/herdr-agent-tree --ref <tag> --yes`, which lets Herdr clone, build and
 register the plugin. `scripts/stage-local.sh` is inert local staging: it writes a complete
 plugin root under the Cargo target directory and never links it or touches user state.
 

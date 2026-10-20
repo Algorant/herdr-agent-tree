@@ -177,7 +177,7 @@ fn proc_cmdline(pid: i32) -> Option<Vec<String>> {
 
 /// The kernel appends `" (deleted)"` once an executable is unlinked. Development deploys
 /// move the stage to `.stage-old.*`; Herdr-managed reinstalls move the old checkout to
-/// `plugins/.tmp-install-*/previous-checkout`. Normalize the suffix to verify the holder.
+/// `plugins/.tmp-install-*/previous-checkout` (0.9.1) or leave it as another install id (0.9.5). Normalize the suffix to verify the holder.
 fn proc_exe(pid: i32) -> Option<PathBuf> {
     let raw = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
     let text = raw.to_string_lossy();
@@ -241,6 +241,13 @@ fn trusted_binary_for(current: &Path, exe: &Path) -> bool {
         let Some(root) = target.parent() else {
             return false;
         };
+        if root.file_name().is_some_and(|name| name == "checkout") {
+            // Herdr 0.9.5: `github-installations/agent-tree-<hash>/<id>/checkout`.
+            return root
+                .parent()
+                .and_then(Path::parent)
+                .is_some_and(|plugin| is_other_install(exe, plugin));
+        }
         let Some(github) = root.parent() else {
             return false;
         };
@@ -256,6 +263,32 @@ fn trusted_binary_for(current: &Path, exe: &Path) -> bool {
             .is_some_and(|plugins| is_previous_checkout(exe, plugins));
     }
     false
+}
+
+/// Herdr 0.9.5 keeps each install as `<plugin>/<id>/checkout`. The current install must sit in
+/// `github-installations/agent-tree-<hash>`; a holder is trusted only as another install id
+/// inside that same plugin directory, matching every component. (The current id itself is
+/// already trusted by the caller.)
+fn is_other_install(exe: &Path, plugin: &Path) -> bool {
+    let in_github_installations = plugin
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with("agent-tree-"))
+        && plugin
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "github-installations");
+    if !in_github_installations {
+        return false;
+    }
+    let Ok(relative) = exe.strip_prefix(plugin) else {
+        return false;
+    };
+    let parts: Vec<_> = relative.components().collect();
+    parts.len() == 5
+        && parts[1].as_os_str() == "checkout"
+        && parts[2].as_os_str() == "target"
+        && parts[3].as_os_str() == "release"
+        && parts[4].as_os_str() == "agent-tree"
 }
 
 /// Herdr moves its former source checkout under the plugin registry on reinstall.

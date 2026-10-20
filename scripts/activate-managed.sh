@@ -63,21 +63,22 @@ else
   "$HERDR" server reload-config >/dev/null || fail "could not reload existing sidebar rows"
 fi
 
-# Invoke only after configuration is loaded. Invoking returns a RUNNING log, not success.
-response=$("$HERDR" plugin action invoke agent-tree.apply) || fail "apply invocation failed"
+# Invoke only after configuration is loaded. `reload` replaces an older subscriber left by a
+# reinstall (`apply` would keep it). Invoking returns a RUNNING log, not success.
+response=$("$HERDR" plugin action invoke agent-tree.reload) || fail "reload invocation failed"
 log_id=$(python3 -c 'import json,sys
 try: print(json.load(sys.stdin)["result"]["log"]["log_id"])
-except (KeyError, ValueError, TypeError): sys.exit("agent-tree: apply returned no log id")' <<< "$response")
+except (KeyError, ValueError, TypeError): sys.exit("agent-tree: reload returned no log id")' <<< "$response")
 for ((attempt=0; attempt<40; attempt++)); do
   logs=$("$HERDR" plugin log list --plugin agent-tree --limit 20) || fail "could not inspect action log $log_id"
   status=$(python3 -c 'import json,sys
 logs=json.load(sys.stdin)["result"]["logs"]
 print(next((entry.get("status", "unknown") for entry in logs if entry.get("log_id") == sys.argv[1]), "missing"))' "$log_id" <<< "$logs")
   case "$status" in
-    succeeded) printf 'agent-tree: apply completed; tree is active (log %s)\n' "$log_id"; exit 0 ;;
-    failed|cancelled|error) printf '%s\n' "$logs" >&2; fail "apply $status (log $log_id)" ;;
+    succeeded) printf 'agent-tree: reload completed; tree is active (log %s)\n' "$log_id"; exit 0 ;;
+    failed|cancelled|error) printf '%s\n' "$logs" >&2; fail "reload $status (log $log_id)" ;;
     running|missing) sleep 0.25 ;;
     *) fail "unknown action status $status (log $log_id)" ;;
   esac
 done
-fail "apply did not finish within 10 seconds (log $log_id); inspect herdr plugin log list --plugin agent-tree"
+fail "reload did not finish within 10 seconds (log $log_id); inspect herdr plugin log list --plugin agent-tree"

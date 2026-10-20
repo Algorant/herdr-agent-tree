@@ -6,6 +6,14 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- A managed upgrade no longer leaves the old subscriber running: `scripts/activate-managed.sh`
+  now invokes `agent-tree.reload` (not `apply`), and `reload` trusts the previous install of the
+  Herdr 0.9.5 `github-installations/agent-tree-<hash>/<id>/checkout` layout, so the doctor sees
+  the new SHA without a separate manual reload. The README and release docs now show `--yes`,
+  which `herdr plugin install` requires when stdin is not interactive.
+
 ### Added
 
 - Workspace membership under a validated lead. A Pi pane whose `agency_lead` token equals the
