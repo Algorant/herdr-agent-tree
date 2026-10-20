@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub fn pi_row(pane_id: &str, path: &str) -> AgentRow {
     AgentRow {
         pane_id: pane_id.to_string(),
+        workspace_id: None,
         agent: "pi".to_string(),
         agent_status: String::new(),
         terminal_id: Some(format!("term-{pane_id}")),
@@ -26,6 +27,7 @@ pub fn pi_row(pane_id: &str, path: &str) -> AgentRow {
 pub fn other_row(pane_id: &str) -> AgentRow {
     AgentRow {
         pane_id: pane_id.to_string(),
+        workspace_id: None,
         agent: "codex".to_string(),
         agent_status: String::new(),
         terminal_id: Some(format!("term-{pane_id}")),

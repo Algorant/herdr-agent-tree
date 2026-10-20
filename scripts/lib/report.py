@@ -49,8 +49,65 @@ def classify_panes(agents) -> dict:
         "ranked": 0,
         "delegated_missing_relationship": 0,
         "ordinary_pi": 0,
+        "lead_declared": 0,
+        "lead_valid": 0,
+        "anchored_workspaces": 0,
+        "ambiguous_anchor_workspaces": 0,
+        "members": 0,
     }
-    for agent in agents or []:
+    agents = list(agents or [])
+    anchors, delegated = {}, set()
+    # Mirrors src/forest.rs: a row is delegated when it is self-valid (unique agency_self)
+    # and its parent hash resolves to exactly one other Pi session; anchors are lead-valid
+    # Pi rows without a delegation parent, and one anchor per workspace adopts its members.
+    sessions = {}
+    published = {}
+    for agent in agents:
+        session = (agent.get("agent_session") or {}).get("value")
+        if agent.get("agent") == "pi" and session:
+            sessions.setdefault(self_hash(session), []).append(agent["pane_id"])
+            own = (agent.get("tokens") or {}).get("agency_self")
+            if own:
+                published[own] = published.get(own, 0) + 1
+    for agent in agents:
+        tokens = agent.get("tokens") or {}
+        session = (agent.get("agent_session") or {}).get("value")
+        if agent.get("agent") != "pi" or not session:
+            continue
+        own, parent = tokens.get("agency_self"), tokens.get("agency_parent")
+        if (
+            tokens.get("role") in ROLES
+            and is_lower_hex64(own)
+            and is_lower_hex64(parent)
+            and self_hash(session) == own
+            and published[own] == 1
+            and len([p for p in sessions.get(parent, []) if p != agent["pane_id"]]) == 1
+        ):
+            delegated.add(agent["pane_id"])
+    for agent in agents:
+        lead = (agent.get("tokens") or {}).get("agency_lead")
+        session = (agent.get("agent_session") or {}).get("value")
+        if agent.get("agent") == "pi" and lead:
+            result["lead_declared"] += 1
+            if session and is_lower_hex64(lead) and self_hash(session) == lead:
+                result["lead_valid"] += 1
+                if agent["pane_id"] not in delegated and agent.get("workspace_id"):
+                    anchors.setdefault(agent["workspace_id"], []).append(agent["pane_id"])
+    for workspace, panes in anchors.items():
+        if len(panes) != 1:
+            result["ambiguous_anchor_workspaces"] += 1
+            continue
+        result["anchored_workspaces"] += 1
+        result["members"] += sum(
+            1
+            for agent in agents
+            if agent.get("workspace_id") == workspace
+            and agent["pane_id"] != panes[0]
+            and agent["pane_id"] not in delegated
+        )
+    for agent in agents:
+        if agent.get("agent") != "pi":
+            continue
         tokens = agent.get("tokens") or {}
         session = ((agent.get("agent_session") or {}).get("value")) if agent.get("agent_session") else None
         result["pi"] += 1
@@ -67,7 +124,7 @@ def classify_panes(agents) -> dict:
                 result["relationship_valid"] += 1
         if declared and not complete:
             result["delegated_missing_relationship"] += 1
-        if not declared and not self_token and not parent_token:
+        if not declared and not self_token and not parent_token and not tokens.get("agency_lead"):
             result["ordinary_pi"] += 1
         if isinstance(tokens.get("agent_tree_rank"), str) and tokens.get("agent_tree_rank"):
             result["ranked"] += 1
@@ -371,13 +428,19 @@ def render_text(reports, split: bool) -> str:
         )
         panes = report["panes"]
         lines.append(
-            "  panes:       relationship-bearing %d (valid %d), ranked agents %d, delegated-without-relationship %d, ordinary Pi %d"
+            "  panes:       relationship-bearing %d (valid %d), ranked agents %d, delegated-without-relationship %d, ordinary Pi %d\n"
+            "  leads:       declared %d (valid %d), anchored workspaces %d, ambiguous %d, members %d"
             % (
                 panes["relationship_bearing"],
                 panes["relationship_valid"],
                 panes["ranked"],
                 panes["delegated_missing_relationship"],
                 panes["ordinary_pi"],
+                panes["lead_declared"],
+                panes["lead_valid"],
+                panes["anchored_workspaces"],
+                panes["ambiguous_anchor_workspaces"],
+                panes["members"],
             )
         )
         lines.append("  verdict:     %s" % report["verdict"])

@@ -102,6 +102,23 @@ agents = [
      "agent_session": {"agent": "pi", "kind": "path", "source": "herdr:pi", "value": "/home/example/.pi/sessions/malformed.jsonl"},
      "tokens": {"role": "subagent", "agency_self": "abc", "agency_parent": "def"}},
 ]
+for agent in agents:
+    agent["workspace_id"] = "w1"
+
+def lead_pi(pane, workspace, name, lead=None):
+    path = "/home/example/.pi/sessions/%s.jsonl" % name
+    return {"pane_id": pane, "workspace_id": workspace, "agent": "pi", "agent_status": "idle",
+            "agent_session": {"agent": "pi", "kind": "path", "source": "herdr:pi", "value": path},
+            "tokens": {"agency_lead": lead or self_hash(path)}}
+
+# w2: one valid lead plus a non-Pi member; w3: two valid leads (ambiguous); w4: a forged lead.
+agents += [
+    lead_pi("w2:p1", "w2", "lead-a"),
+    {"pane_id": "w2:p2", "workspace_id": "w2", "agent": "codex", "agent_status": "idle", "tokens": {}},
+    lead_pi("w3:p1", "w3", "lead-b"),
+    lead_pi("w3:p2", "w3", "lead-c"),
+    lead_pi("w4:p1", "w4", "lead-d", "0" * 64),
+]
 print(json.dumps({"result": {"agents": agents}}))
 PY
 
@@ -302,6 +319,11 @@ assert panes["relationship_valid"] == 1, panes
 assert panes["ranked"] == 1, panes
 assert panes["delegated_missing_relationship"] == 2, panes
 assert panes["ordinary_pi"] == 1, panes
+assert panes["lead_declared"] == 4, panes
+assert panes["lead_valid"] == 3, panes
+assert panes["anchored_workspaces"] == 1, panes
+assert panes["ambiguous_anchor_workspaces"] == 1, panes
+assert panes["members"] == 1, panes
 assert doc["split_state"] is False
 PY
 pass 'local staged endpoint reports healthy and separates role-declared from ordinary panes'

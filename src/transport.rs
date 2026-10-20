@@ -26,6 +26,8 @@ pub const SUBSCRIBED_EVENTS: &[&str] = &[
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AgentRow {
     pub pane_id: String,
+    /// Herdr workspace the pane lives in; read only for lead-anchored membership.
+    pub workspace_id: Option<String>,
     pub agent: String,
     pub agent_status: String,
     /// Herdr's stable terminal identity and its per-agent state transition counter. Both are
@@ -54,6 +56,7 @@ impl AgentRow {
         let pane_id = value.get("pane_id")?.as_str()?.to_string();
         Some(AgentRow {
             pane_id,
+            workspace_id: optional_text(value, "workspace_id"),
             agent: text(value, "agent"),
             agent_status: text(value, "agent_status"),
             terminal_id: optional_text(value, "terminal_id"),
@@ -150,6 +153,8 @@ impl Model {
         for row in self.ordered_rows() {
             hasher.update(row.pane_id.as_bytes());
             hasher.update(b"\x1f");
+            hasher.update(row.workspace_id.as_deref().unwrap_or_default().as_bytes());
+            hasher.update(b"\x1f");
             hasher.update(row.agent.as_bytes());
             hasher.update(b"\x1f");
             hasher.update(row.terminal_id.as_deref().unwrap_or_default().as_bytes());
@@ -171,6 +176,7 @@ impl Model {
                 "role",
                 "agency_self",
                 "agency_parent",
+                "agency_lead",
             ] {
                 hasher.update(row.token(name).unwrap_or_default().as_bytes());
                 hasher.update(b"\x1f");

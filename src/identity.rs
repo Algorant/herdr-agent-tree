@@ -85,6 +85,18 @@ pub fn is_self_valid(row: &AgentRow, relationship: &Relationship) -> bool {
     }
 }
 
+/// True when the row is a Pi session whose published `agency_lead` equals the recomputed
+/// hash of its own native session path, byte for byte. Only such a row can anchor a workspace.
+pub fn lead_valid(row: &AgentRow) -> bool {
+    if !row.is_pi_session() {
+        return false;
+    }
+    match (row.token("agency_lead"), row.session_path.as_deref()) {
+        (Some(lead), Some(path)) => is_lower_hex64(&lead) && lead == self_hash(path),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

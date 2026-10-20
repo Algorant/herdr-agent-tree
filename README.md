@@ -21,8 +21,9 @@ and the shortcut (see "End-to-end test").
 
 - Exactly two current pane tokens are published, both namespaced to this plugin:
   - `agent_tree_branch` — only validated descendant markers: Workers show branch/role;
-    Subagents show branch/role and their own name, capped at 12 terminal display columns.
-    Roots and ordinary agents receive no branch token.
+    Subagents show branch/role and their own name, capped at 12 terminal display columns;
+    workspace members under a validated lead show `M` (no name). Roots and ordinary agents
+    receive no branch token.
   - `agent_tree_rank` — `<13-digit inverted time>-<endpoint>-<6-digit preorder>`, used only for
     sorting (see "Recency ordering").
 - The former `agent_tree_row` token is never written by current code. Upgrades and cleanup
@@ -36,6 +37,13 @@ and the shortcut (see "End-to-end test").
   pane, and a pane that is only a parent is validated through a validated child's
   `agency_parent`. Anything missing, malformed, mismatched, duplicated, self-linked,
   dangling, ambiguous, cyclic or stale stays visible and unlinked.
+- A second, structural edge kind exists only under a validated lead: a Pi pane whose published
+  `agency_lead` equals the recomputed hash of its own session path, and which has no delegation
+  parent, anchors its workspace when it is the only such anchor there. The other undelegated agent
+  rows in that workspace (Pi or not) nest beneath it as `├─M`/`└─M` members, after the anchor's
+  delegated children, in the anchor's family; a member's own Workers and Subagents nest under it.
+  A forged or stale lead, several anchors in one workspace, or an anchor that is itself delegated
+  groups nothing. Delegation edges are still never inferred, and the tab label is never read.
 
 ## Requirements
 
@@ -89,7 +97,9 @@ tests/e2e/toggle.sh       # owner-safe shortcut toggle; also run by `just test`
 The test builds the plugin, creates a fully isolated Herdr instance under a temp directory, and
 drives the plugin on a real delegation family: a root, a Worker in its task workspace, two
 Subagents sharing the root's workspace/tab, a second unlinked root, two undelegating Pi sessions
-and a non-Pi row. It also injects a stale 0.2.0 composed token and verifies that the A2 row renders
+and a non-Pi row. The root also publishes a valid `agency_lead`: a non-Pi pane and a manus Pi tab
+join its workspace as `M` members, the manus owns a Worker and a Subagent (depth 3), and forged,
+restored and duplicated leads are checked. It also injects a stale 0.2.0 composed token and verifies that the A2 row renders
 only the native workspace/tab cells. It is noninteractive, has no options, never touches the active Herdr server, its
 socket or `~/.config/herdr`, and removes the temp directory and isolated server on exit,
 including on failure or interrupt.
@@ -366,8 +376,9 @@ action availability and tree-off state, shortcut presence, `$agent_tree_branch` 
 legacy `$agent_tree_row` migration state, native fallback state, and pane counts. Pane
 classification uses only pane-published tokens: a pane that declares
 `role` worker/subagent but lacks a complete relationship is counted separately from an
-ordinary tokenless Pi pane whose role is unknown. Nothing is inferred from a title, name, or
-cwd. A representative report where the local endpoint is healthy and a saved endpoint has the
+ordinary tokenless Pi pane whose role is unknown. It also reports `agency_lead` panes declared
+and valid, anchored and ambiguous workspaces, and the members they adopt. Nothing is inferred
+from a title, name, or cwd. A representative report where the local endpoint is healthy and a saved endpoint has the
 shortcut and row token but no plugin:
 
 ```

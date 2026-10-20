@@ -242,7 +242,7 @@ report_rel() { # <pane> <role> <self-hash> <parent-hash> [extra token ...]
         "${args[@]}" >/dev/null
 }
 
-log "Creating the delegation fixture (7 credential-free idle Pi agents)"
+log "Creating the delegation fixture (10 credential-free idle Pi agents)"
 t0=$SECONDS
 
 # make_pi runs in the current shell and sets GP_PANE/GP_SESSION, so the one-time credential
@@ -294,6 +294,27 @@ P_S2=$(herdr agent list | jq -r --arg session "$S_S2" '.result.agents[] | select
 [ -n "$P_S2" ] || fail "could not resolve moved Subagent pane from its session path"
 H_S2=$(self_hash "$S_S2")
 report_rel "$P_S2" subagent "$H_S2" "$H_R1" "question=1"
+
+# Workspace membership fixture (task-16): root-alpha is the lead of its workspace. A reported
+# non-Pi pane in the `main` tab and a manus Pi in a second tab are undelegated members; the
+# manus owns a Worker and that Worker's Subagent, which keep delegation nesting beneath it.
+report_lead() { # <pane> <64-hex lead token>
+    herdr pane report-metadata "$1" --source lead-fixture --token "agency_lead=$2" >/dev/null
+}
+FORGED=$(printf '0%.0s' {1..64})
+report_lead "$P_R1" "$H_R1"
+P_XM=$(herdr pane split "$P_R1" --direction right --no-focus | jq -r '.result.pane.pane_id')
+[ -n "$P_XM" ] && [ "$P_XM" != null ] || fail "could not split a member pane into root-alpha's tab"
+herdr pane report-agent "$P_XM" --source pi-fixture --agent codex --state idle >/dev/null
+mkdir -p "$TMP/work/manus"
+P_M=$(herdr tab create --workspace "$ROOT_WS" --cwd "$TMP/work/manus" --label manus --no-focus \
+    --env "PATH=$PI_DIR:$PATH" | jq -r '.result.root_pane.pane_id')
+S_M=$(start_pi manus "$P_M"); H_M=$(self_hash "$S_M"); step "manus        (${SECONDS-t0}s)"
+make_pi worker-manus; P_W2=$GP_PANE; S_W2=$GP_SESSION; H_W2=$(self_hash "$S_W2"); step "worker-manus (${SECONDS-t0}s)"
+report_rel "$P_W2" worker "$H_W2" "$H_M" "task_id=task-e2e-manus"
+make_pi sub-manus; P_S3=$GP_PANE; S_S3=$GP_SESSION; H_S3=$(self_hash "$S_S3"); step "sub-manus    (${SECONDS-t0}s)"
+herdr agent rename "$P_S3" manus-scout >/dev/null
+report_rel "$P_S3" subagent "$H_S3" "$H_W2" "question=1"
 
 # ---------------------------------------------------------------------------
 # 5. Apply the plugin and verify the tree came from real identity validation.
@@ -448,17 +469,93 @@ herdr pane report-metadata "$P_S1" --source pi-fixture \
     --token "agency_self=$(printf '0%.0s' {1..64})" >/dev/null
 dropped=0
 for _ in $(seq 1 30); do
-    [ "$(row_of "$P_S1")" = "-" ] && { dropped=1; break; }
+    [ "$(row_of "$P_S1")" = "├─M" ] && { dropped=1; break; }
     sleep 0.5
 done
-[ "$dropped" = 1 ] || fail "a forged agency_self was not rejected"
+[ "$dropped" = 1 ] || fail "a forged agency_self was not rejected (row: $(row_of "$P_S1"))"
+# The pane lives in the lead's workspace, so with its delegation edge rejected it falls back to
+# a plain workspace member; it never keeps a Subagent marker or name.
 invalid_sub_row=$(row_of "$P_S1")
-[ "$invalid_sub_row" = "-" ] || fail "invalid relationship retained a fabricated branch: $invalid_sub_row"
-step "Forged agency_self dropped the Subagent branch, leaving native location cells"
+[ "$invalid_sub_row" = "├─M" ] || fail "invalid relationship retained a fabricated branch: $invalid_sub_row"
+step "Forged agency_self dropped the Subagent branch; the pane became a plain workspace member"
 report_rel "$P_S1" subagent "$H_S1" "$H_R1" "question=1"
 wait_ranked || fail "restoring the true agency_self left an agent unranked"
 wait_row_contains "$P_S1" "S"
 step "True agency_self restored the Subagent branch"
+
+# ---------------------------------------------------------------------------
+# 5b. Workspace membership under a validated lead.
+# ---------------------------------------------------------------------------
+wait_row_equals() { # <pane> <exact branch token>
+    local pane="$1" wanted="$2" got=""
+    for _ in $(seq 1 60); do
+        got=$(row_of "$pane")
+        [ "$got" = "$wanted" ] && return 0
+        sleep 0.5
+    done
+    fail "pane $pane branch token is '$got', expected '$wanted'"
+}
+member_panes() { # -> sorted pane ids whose branch token is an M row
+    herdr agent list | jq -r '[.result.agents[] | select((.tokens.agent_tree_branch // "") | test("─M$")) | .pane_id] | sort | join(",")'
+}
+
+log "Verifying workspace membership under the validated lead"
+wait_ranked || fail "membership fixture left an agent unranked"
+wait_row_equals "$P_XM" "├─M"
+wait_row_equals "$P_M" "└─M"
+wait_row_equals "$P_W2" "│  └─W"
+wait_row_equals "$P_S3" "│  │  └─S manus-scout"
+[ "$(member_panes)" = "$(printf '%s\n' "$P_XM" "$P_M" | sort | paste -sd, -)" ] \
+    || fail "only the non-Pi pane and the manus may carry M, got: $(member_panes)"
+for pane in "$P_W1" "$P_S1" "$P_S2"; do
+    [[ "$(row_of "$pane")" != *M* ]] || fail "delegated child $pane of the lead was shown as a member"
+done
+[ "$(row_of "$P_R1")" = "-" ] || fail "the lead itself received a branch marker: $(row_of "$P_R1")"
+for pane in "$P_R2" "$P_L1" "$P_L2" "$P_W2"; do
+    [[ "$(row_of "$pane")" != *M* ]] || fail "$pane lives outside the lead's workspace but carries an M row"
+done
+root_stamp=$(rank_field "$P_R1" 1)
+root_order=$((10#$(rank_field "$P_R1" 3)))
+family=()
+for pane in "$P_R1" "$P_W1" "$P_S1" "$P_S2" "$P_XM" "$P_M" "$P_W2" "$P_S3"; do
+    [ "$(rank_field "$pane" 1)" = "$root_stamp" ] || fail "family member $pane does not share the lead's recency prefix"
+    family+=("$((10#$(rank_field "$pane" 3)))")
+done
+[ "$(printf '%s\n' "${family[@]}" | sort -n | paste -sd, -)" = "$(seq "$root_order" $((root_order + 7)) | paste -sd, -)" ] \
+    || fail "lead family is not one contiguous preorder: ${family[*]}"
+# Variant A: delegated children first, then members in native order, each member's own subtree under it.
+[ "${family[0]}" = "$root_order" ] || fail "the lead is not first in its family"
+for index in 1 2 3; do [ "${family[$index]}" -le $((root_order + 3)) ] || fail "a delegated child is not placed before the members: ${family[*]}"; done
+[ "${family[4]}" = $((root_order + 4)) ] && [ "${family[5]}" = $((root_order + 5)) ] \
+    && [ "${family[6]}" = $((root_order + 6)) ] && [ "${family[7]}" = $((root_order + 7)) ] \
+    || fail "members and the manus subtree are not in preorder: ${family[*]}"
+step "Lead family: M rows after delegated children, Ceph -> M -> W -> S nested, one family stamp, contiguous preorder"
+
+log "Tamper check: a forged agency_lead must remove the grouping (tab labels are never read)"
+report_lead "$P_R1" "$FORGED"
+wait_row_equals "$P_XM" "-"
+wait_row_equals "$P_M" "-"
+wait_row_equals "$P_W2" "└─W"
+wait_row_equals "$P_S3" "│  └─S manus-scout"
+[ -z "$(member_panes)" ] || fail "a forged agency_lead left M rows: $(member_panes)"
+wait_ranked || fail "forging the lead left an agent unranked"
+step "Forged agency_lead dropped every member row; the manus keeps its own Worker and Subagent"
+report_lead "$P_R1" "$H_R1"
+wait_row_equals "$P_XM" "├─M"
+wait_row_equals "$P_S3" "│  │  └─S manus-scout"
+step "True agency_lead restored the grouping"
+
+log "Two valid leads in one workspace must produce no grouping"
+report_lead "$P_M" "$H_M"
+wait_row_equals "$P_XM" "-"
+wait_row_equals "$P_M" "-"
+[ -z "$(member_panes)" ] || fail "an ambiguous workspace left M rows: $(member_panes)"
+step "A second valid lead dropped the grouping"
+report_lead "$P_M" "$FORGED"
+wait_row_equals "$P_XM" "├─M"
+wait_row_equals "$P_M" "└─M"
+wait_ranked || fail "restoring the single lead left an agent unranked"
+step "Back to one valid lead: grouping restored"
 
 # ---------------------------------------------------------------------------
 # 6. Render the one-cell sidebar at pinned widths and at the local default settings.
@@ -514,7 +611,11 @@ PY
         [ "$measured" = "$expected" ] || fail "$label: expected ${expected}-column sidebar at the rendered pane seam, measured $measured"
     fi
     printf '%s\n' "$region" | grep -qE 'agents +tree' || fail "$label: sidebar header missing: $region"
-    printf '%s\n' "$region" | grep -q '└─W' || fail "$label: Worker marker missing: $region"
+    [ "$(printf '%s\n' "$region" | grep -cE '[├└]─W')" = 2 ] || fail "$label: expected the lead's Worker and the manus's Worker markers: $region"
+    printf '%s\n' "$region" | grep -q '│  └─W' || fail "$label: the manus's depth-2 Worker marker is missing: $region"
+    printf '%s\n' "$region" | grep -q '├─M' || fail "$label: member row ├─M missing: $region"
+    printf '%s\n' "$region" | grep -q '└─M' || fail "$label: member row └─M missing: $region"
+    printf '%s\n' "$region" | grep -q '│  │  └─S' || fail "$label: depth-3 Subagent row missing: $region"
     printf '%s\n' "$region" | grep -q 'task-5' || fail "$label: Worker task workspace identity missing: $region"
     [ "$(printf '%s\n' "$region" | grep -c '├─S')" = 2 ] \
         || fail "$label: expected two direct Subagent sibling markers: $region"
@@ -523,6 +624,9 @@ PY
     printf '%s\n' "$region" | grep -q 'codex-1' || fail "$label: non-Pi workspace fallback is not readable"
     if printf '%s\n' "$region" | grep -q 'π -'; then fail "$label: Pi terminal title leaked into the native fallback row"; fi
     step "$label: measured ${measured}-column sidebar seam; exact rows captured below"
+    printf '%s\n' "$region" | grep -E '─M|│  │  └─S' | while IFS= read -r line; do
+        printf '     M/depth-3 |%s\n' "$line"
+    done
     printf '%s\n' "$region" | grep -E 'agents +tree|^[[:space:]]*○' | while IFS= read -r line; do
         printf '     |%s\n' "$line"
     done

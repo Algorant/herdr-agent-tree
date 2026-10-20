@@ -51,14 +51,31 @@ Every choice below cites an M1 observation or is listed as an unknown in C10.
   worktrees or proximity.
 - **placeable node**: a parent-valid root with no parent edge, or a node whose parent chain
   terminates at a parent-valid root without revisiting a node. Everything else is unplaceable.
+- **Second edge kind, workspace membership under a validated lead.** Delegation edges (above)
+  are never inferred. A separate, structural edge exists only under a validated anchor:
+  - **lead-valid pane**: a Pi row with a path session that publishes `agency_lead`, a 64-char
+    lowercase hex value exactly equal to `self(pane)` (its own session hash, recomputed,
+    byte-for-byte).
+  - **anchor**: a lead-valid pane with no validated delegation parent. A workspace
+    (`workspace_id` from the same snapshot) groups only when it has **exactly one** anchor;
+    zero or several anchors group nothing.
+  - **member**: any other agent row in that workspace, Pi or not, that has no validated
+    delegation parent (a cycle member has none either). Membership is a workspace fact; only a
+    validated delegation parent overrides it, so a Worker or Subagent nests under its delegator
+    even when it sits in the lead's workspace.
+  - Members are placed at depth 1 beneath the anchor, after the anchor's delegated children,
+    both groups in native order, and share the anchor's family (rank prefix, recency, preorder).
+    A member's own validated Workers and Subagents nest beneath it (Ceph → M → W → S).
+  - The tab label is never read.
 
 ## C3 Ordering and rank format
 
 - Input is the native agent order from `session.snapshot` / `agent.list`
   (workspace, then tab, then pane).
 - Emission: parent-valid roots in native order; for each root, the root then its validated
-  descendants recursively, children in native order. Then every remaining agent row in
-  native order.
+  descendants recursively, children in native order (for a validated anchor: its delegated
+  children first, then its workspace members, each with its own subtree). Then every remaining
+  agent row in native order.
 - `agent_tree_rank` = 6-digit zero-padded decimal (`000001` upward) assigned in emission
   order. Sort-only; the recommended row fragment does not render it. If N > 999999 the
   plugin publishes no ranks and logs a clear error — no wrap, no partial publication.
@@ -88,8 +105,9 @@ indent    = ""                              depth 0
           | ("│  " × (depth-1))             1 ≤ depth ≤ 3        (U+2502)
           | "…  " + ("│  " × 2)            depth > 3           (bounded at any depth)
 branch    = "├─" if a following sibling exists in the same family, else "└─"
-role      = "W" (worker) | "S" (subagent)
+role      = "W" (worker) | "S" (subagent) | "M" (workspace member under a validated lead)
 task      = Worker task_id value, truncated to 12 characters, worker only
+            (an `M` row carries no name, task or attention)
 attention = "?" pending question | "!" handoff=failed | "▸" handoff=reported | ""
 ```
 
@@ -122,13 +140,21 @@ attention = "?" pending question | "!" handoff=failed | "▸" handoff=reported |
 | dangling parent (`agency_parent` matches no pane) or ambiguous parent (matches ≥ 2 panes) | child unlinked |
 | cycle: a node whose parent chain revisits a node, or whose chain passes through such a node | unlinked; cycle members never rank and never validate a parent |
 | stale/replaced identity | unlinked |
+| `agency_lead` missing, malformed, mismatched (forged or stale), or on a non-Pi / session-less pane | not an anchor; its workspace's rows stay unlinked roots |
+| two or more valid anchors in one workspace | no grouping for that workspace; every row returns to its own root |
+| an anchor that has a validated delegation parent | not an anchor (it nests under its delegator) |
+| an undelegated row in a workspace with exactly one valid anchor (Pi or not, including a pane with a dangling or forged delegation token) | member `M` of the anchor; only a validated delegation parent overrides workspace membership |
+| a delegated row (validated parent) in the anchor's workspace | stays under its delegator, never a member |
 
 Stale/replaced is handled structurally: every projection is recomputed from the current
 snapshot, and no graph, hash or parent assignment is carried across snapshots, so a restart
 or a replaced pane cannot leave a stale parent assignment.
 
-No inference fallback from name, terminal title, cwd, worktree, tab, workspace,
-`orchestrator_workspace_id`, `started_at`, `delivery_id` or filesystem proximity.
+No inference fallback from name, terminal title, cwd, worktree, tab,
+`orchestrator_workspace_id`, `started_at`, `delivery_id` or filesystem proximity. The
+workspace is read in exactly one place: as membership under a validated anchor (C2). It never
+creates or guesses a delegation edge, and a workspace without exactly one validated anchor is
+never read at all.
 `delivery_id`, `worker_context`, `started_at` and `orchestrator_workspace_id` are never read
 as ownership inputs.
 

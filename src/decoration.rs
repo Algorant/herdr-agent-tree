@@ -1,7 +1,7 @@
 //! Builds the plugin-owned branch cell for validated descendants.
 //!
 //! Workers carry only their tree marker; their task workspace is already shown by Herdr.
-//! Subagents also carry a bounded own name so siblings in the parent's location remain
+//! Workspace members under a validated lead carry only `M`. Subagents also carry a bounded own name so siblings in the parent's location remain
 //! distinguishable.
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -22,6 +22,7 @@ pub fn descendant(
     let role_label = match role {
         "worker" => "W",
         "subagent" => "S",
+        "member" => "M",
         _ => return None,
     };
     let branch = if is_last_sibling { "└─" } else { "├─" };

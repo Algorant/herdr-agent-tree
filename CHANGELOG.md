@@ -6,6 +6,19 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Workspace membership under a validated lead. A Pi pane whose `agency_lead` token equals the
+  recomputed hash of its own session path, and which has no delegation parent, anchors its
+  workspace when it is the only such anchor there. The workspace's other undelegated agent rows
+  (Pi or not) nest at depth 1 as `├─M`/`└─M` rows after the anchor's delegated children, in the
+  anchor's family; a member's own Workers and Subagents keep nesting beneath it (Ceph → M → W → S).
+  Zero or several anchors, a forged or stale lead, or an anchor with a delegation parent group
+  nothing. Delegation edges remain recomputed and never inferred; the tab label is never read.
+- `scripts/doctor.sh` reports `agency_lead` panes declared and valid, anchored and ambiguous
+  workspaces, and member counts in text and `--json`; a pane carrying only `agency_lead` is not
+  counted as an ordinary Pi pane, and non-Pi agents are no longer counted as Pi panes.
+
 ## [0.4.0] - 2026-09-29
 
 ### Changed

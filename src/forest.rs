@@ -1,7 +1,8 @@
 //! Placement: which validated nodes form the forest, in what order, and at what depth.
 //!
 //! Every rule here is a direct implementation of contract C2/C3/C5. Nothing is guessed from
-//! names, titles, tabs, worktrees or proximity; a node that cannot be validated stays visible
+//! names, titles, tabs, worktrees or proximity (workspace membership under a validated lead
+//! anchor is the one structural exception); a node that cannot be validated stays visible
 //! and unlinked.
 
 use crate::identity::{self, Relationship};
@@ -92,6 +93,39 @@ pub fn build(order: &[String], rows: &HashMap<String, AgentRow>) -> Vec<Placemen
         }
     }
 
+    // Workspace membership, the second edge kind: a workspace with exactly one lead-valid
+    // anchor (no delegation parent) adopts its other undelegated agent rows, Pi or not. Zero
+    // or several anchors in one workspace group nothing. The workspace id is the only input;
+    // tab labels, names, titles and cwd are never read.
+    let mut anchors: HashMap<&str, Vec<&str>> = HashMap::new();
+    for row in &pi_rows {
+        if let Some(workspace) = row.workspace_id.as_deref() {
+            if identity::lead_valid(row) && !parent.contains_key(&row.pane_id) {
+                anchors
+                    .entry(workspace)
+                    .or_default()
+                    .push(row.pane_id.as_str());
+            }
+        }
+    }
+    let mut members: HashMap<String, Vec<String>> = HashMap::new();
+    let mut member_ids: HashSet<String> = HashSet::new();
+    for row in &agent_rows {
+        let Some(workspace) = row.workspace_id.as_deref() else {
+            continue;
+        };
+        let Some([anchor]) = anchors.get(workspace).map(Vec::as_slice) else {
+            continue;
+        };
+        if row.pane_id != *anchor && !parent.contains_key(&row.pane_id) {
+            members
+                .entry((*anchor).to_string())
+                .or_default()
+                .push(row.pane_id.clone());
+            member_ids.insert(row.pane_id.clone());
+        }
+    }
+
     let mut children: HashMap<String, Vec<String>> = HashMap::new();
     for (child, parent_id) in &parent {
         children
@@ -102,6 +136,10 @@ pub fn build(order: &[String], rows: &HashMap<String, AgentRow>) -> Vec<Placemen
     for list in children.values_mut() {
         list.sort_by_key(|id| native_index.get(id.as_str()).copied().unwrap_or(usize::MAX));
     }
+    // Variant A: members follow the anchor's delegated children, in native order.
+    for (anchor, list) in members {
+        children.entry(anchor).or_default().extend(list);
+    }
 
     // Every row without a parent edge is a root. A node whose parent chain never reaches one
     // (a cycle, or a chain into an unplaceable node) never validates a parent: it is emitted
@@ -109,8 +147,17 @@ pub fn build(order: &[String], rows: &HashMap<String, AgentRow>) -> Vec<Placemen
     let roots: Vec<String> = agent_rows
         .iter()
         .map(|row| row.pane_id.clone())
-        .filter(|id| !parent.contains_key(id))
+        .filter(|id| !parent.contains_key(id) && !member_ids.contains(id))
         .collect();
+
+    // Role of each placed row: the validated relationship role, or `member` for an adopted row.
+    let mut roles: HashMap<String, String> = relationships
+        .iter()
+        .map(|(id, relationship)| (id.clone(), relationship.role.clone()))
+        .collect();
+    for id in &member_ids {
+        roles.insert(id.clone(), "member".to_string());
+    }
 
     let mut placements = Vec::new();
     let mut visited: HashSet<String> = HashSet::new();
@@ -122,7 +169,7 @@ pub fn build(order: &[String], rows: &HashMap<String, AgentRow>) -> Vec<Placemen
             0,
             true,
             &children,
-            &relationships,
+            &roles,
             &mut visited,
             &mut placements,
             &mut rank,
@@ -151,7 +198,7 @@ fn emit(
     depth: usize,
     is_last_sibling: bool,
     children: &HashMap<String, Vec<String>>,
-    relationships: &HashMap<String, Relationship>,
+    roles: &HashMap<String, String>,
     visited: &mut HashSet<String>,
     placements: &mut Vec<Placement>,
     rank: &mut u32,
@@ -159,12 +206,11 @@ fn emit(
     if !visited.insert(pane_id.to_string()) {
         return;
     }
-    let relationship = relationships.get(pane_id);
     placements.push(Placement {
         pane_id: pane_id.to_string(),
         depth,
         is_last_sibling,
-        role: relationship.map(|r| r.role.clone()).unwrap_or_default(),
+        role: roles.get(pane_id).cloned().unwrap_or_default(),
         rank: *rank,
         family_root: family_root.to_string(),
     });
@@ -178,7 +224,7 @@ fn emit(
                 depth + 1,
                 index + 1 == last,
                 children,
-                relationships,
+                roles,
                 visited,
                 placements,
                 rank,
