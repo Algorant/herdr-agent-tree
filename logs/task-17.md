@@ -4,14 +4,17 @@ uid: 02170388-fad8-47b5-ba5c-6f5f8256fd18
 type: task
 kind: "papercut"
 title: "worktop cannot run `just test`: just inactive, tmux missing"
-state: todo
 priority: "low"
 accord:
   status: "ready"
   acceptance: ["On worktop, `just test` runs the full gate with real tmux, or the README states which machines can run the PTY e2e and how to provision one."]
-  updatedAt: "2026-10-20T14:42:40Z"
+  updatedAt: "2026-10-20T15:49:49Z"
 createdAt: "2026-10-20T14:42:40Z"
-updatedAt: "2026-10-20T14:42:40Z"
+updatedAt: "2026-10-20T15:49:49Z"
+archivedAt: "2026-10-20T15:49:49Z"
+resolution:
+  outcome: "completed"
+  reviewer: "Algorant"
 ---
 
 ## Description
