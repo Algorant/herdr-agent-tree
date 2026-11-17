@@ -699,3 +699,7 @@ owner-safe toggle and Herdr's native header behaviour were verified in isolation
 unverified: mouse targets on other surfaces, indexed `focus_agent` bindings, the visual focus
 ring, `workspace_order` / `tab_order` as secondary sort fields, and styled token rendering in
 a real theme.
+
+## License
+
+[MIT](LICENSE)
